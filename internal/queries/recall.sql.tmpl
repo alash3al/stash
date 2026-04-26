@@ -10,7 +10,7 @@ FROM episodes
 WHERE deleted_at IS NULL
     AND embedding IS NOT NULL
 {{if .Args.namespace_ids}}
-    AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+    AND namespace_id = ANY({{.Bind .Args.namespace_ids}})
 {{end}}
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}
@@ -27,8 +27,9 @@ SELECT
 FROM facts
 WHERE deleted_at IS NULL
     AND embedding IS NOT NULL
+    AND valid_until IS NULL
 {{if .Args.namespace_ids}}
-    AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+    AND namespace_id = ANY({{.Bind .Args.namespace_ids}})
 {{end}}
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}

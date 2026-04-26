@@ -74,6 +74,7 @@ type jsonPattern struct {
 	SourceRels  []int64 `json:"source_rels"`
 }
 
+
 type jsonContradiction struct {
 	Classification string  `json:"classification"`
 	Confidence     float32 `json:"confidence"`
@@ -95,8 +96,10 @@ type jsonGoalProgress struct {
 
 type jsonFailurePattern struct {
 	Type        string  `json:"type"`
+
 	FailureID   int64   `json:"failure_id"`
 	Evidence    string  `json:"evidence"`
+
 	PatternFact string  `json:"pattern_fact"`
 	Confidence  float32 `json:"confidence"`
 }
@@ -107,6 +110,12 @@ type jsonHypothesisEvidence struct {
 	Confidence    float32 `json:"confidence"`
 	Reasoning     string  `json:"reasoning"`
 	NewConfidence float32 `json:"new_confidence"`
+}
+
+type jsonFailureTriage struct {
+	CauseFactID int64   `json:"cause_fact_id"`
+	Confidence  float32 `json:"confidence"`
+	Reasoning   string  `json:"reasoning"`
 }
 
 // --- ReasonStructured ---
@@ -489,12 +498,21 @@ func (o *OpenAI) ReasonCausalLinks(ctx context.Context, facts []models.Fact) ([]
 		return nil, nil
 	}
 
+	// To support larger batches (30-50 facts) we truncate fact contents to
+	// a reasonable slice to avoid token explosion and instruct the model to
+	// return only IDs. This keeps the prompt compact while preserving
+	// identifiers for mapping results back to facts.
+	maxChars := 300
 	var factLines []string
 	for _, f := range facts {
-		factLines = append(factLines, fmt.Sprintf("[Fact %d] %s", f.ID, f.Content))
+		content := f.Content
+		if len(content) > maxChars {
+			content = content[:maxChars] + "..."
+		}
+		factLines = append(factLines, fmt.Sprintf("[Fact %d] %s", f.ID, content))
 	}
 
-	prompt := fmt.Sprintf(`Given these facts, identify cause-effect relationships between them.
+	prompt := fmt.Sprintf(`Given these facts (contents may be truncated), identify direct cause-effect relationships between them. When listing facts, prefer fact IDs only to reduce token usage.
 
 Facts:
 %s
@@ -1076,4 +1094,63 @@ func filterIDs(ids []int64, valid map[int64]bool) (filtered []int64, hasInvalid 
 		}
 	}
 	return
+}
+func (o *OpenAI) ReasonFailureCause(ctx context.Context, failure models.Failure, facts []models.Fact) (int64, float32, error) {
+	if len(facts) == 0 {
+		return 0, 0, nil
+	}
+
+	var factLines []string
+	for _, f := range facts {
+		factLines = append(factLines, fmt.Sprintf("[Fact %d] %s", f.ID, f.Content))
+	}
+
+	prompt := fmt.Sprintf(`Given a failure and a list of recent facts, identify which fact most likely caused or explains the failure.
+
+FAILURE:
+What: %s
+Why: %s
+Lesson: %s
+
+RECENT FACTS:
+%s
+
+Output ONLY this exact JSON structure:
+{"cause_fact_id": 123, "confidence": 0.9, "reasoning": "brief explanation"}
+
+Rules:
+- cause_fact_id must be a fact ID from the RECENT FACTS list.
+- If no fact clearly explains the failure, output {"cause_fact_id": 0, "confidence": 0, "reasoning": "none"}.
+- confidence must be between 0.0 and 1.0.`, failure.Content, failure.Reason, failure.Lesson, strings.Join(factLines, "\n"))
+
+	msgs := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage(systemPrompt),
+		openai.UserMessage(prompt),
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+			Model:    o.model,
+			Messages: msgs,
+		})
+		if err != nil {
+			return 0, 0, fmt.Errorf("chat.completions call failed: %w", err)
+		}
+		if len(resp.Choices) == 0 {
+			return 0, 0, errors.New("reasoner: no response from LLM")
+		}
+
+		output := strings.TrimSpace(resp.Choices[0].Message.Content)
+		raw := extractJSON(output)
+
+		var jt jsonFailureTriage
+		if err := json.Unmarshal([]byte(raw), &jt); err != nil {
+			msgs = append(msgs, openai.SystemMessage(retryWarning))
+			continue
+		}
+
+		return jt.CauseFactID, jt.Confidence, nil
+	}
+
+	return 0, 0, errors.New("reasoner: failed to triage failure after retries")
 }

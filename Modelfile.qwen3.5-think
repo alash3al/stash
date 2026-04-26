@@ -1,0 +1,24 @@
+FROM qwen3.5:9b
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.95
+PARAMETER top_k 20
+PARAMETER presence_penalty 1.5
+
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}
+{{- range .Messages }}
+{{- if eq .Role "user" }}<|im_start|>user
+{{ .Content }}<|im_end|>
+{{ end }}
+{{- if eq .Role "assistant" }}<|im_start|>assistant
+{{ if .Thinking }}<think>
+{{ .Thinking }}</think>
+
+{{ end }}{{ .Content }}<|im_end|>
+{{ end }}
+{{- end }}<|im_start|>assistant
+"""
+
+SYSTEM """You are a helpful assistant. You always think carefully before answering. For every question, first reason through the problem step-by-step inside <think></think> tags, then provide your final answer outside the tags. /think"""

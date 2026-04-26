@@ -111,11 +111,11 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.Recall(ctx, namespaces, query, limit)
+		resp, err := bc.Brain.Recall(ctx, namespaces, query, limit)
 		if err != nil {
 			return nil, err
 		}
-		b, _ := json.Marshal(results)
+		b, _ := json.Marshal(resp)
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
@@ -389,12 +389,14 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	mcpServer.AddTool(mcp.NewTool("create_causal_link",
 		mcp.WithDescription(render("create_causal_link_description")),
 		mcp.WithNumber("cause_id", mcp.Description(render("create_causal_link_cause_id")), mcp.Required()),
-		mcp.WithNumber("effect_id", mcp.Description(render("create_causal_link_effect_id")), mcp.Required()),
+		mcp.WithNumber("effect_id", mcp.Description(render("create_causal_link_effect_id"))),
+		mcp.WithNumber("effect_failure_id", mcp.Description("The ID of the failure that was caused by the fact")),
 		mcp.WithNumber("confidence", mcp.Description(render("create_causal_link_confidence")), mcp.DefaultNumber(0.8)),
 		mcp.WithString("namespace", mcp.Description(render("namespace_param"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		causeID := request.GetInt("cause_id", 0)
 		effectID := request.GetInt("effect_id", 0)
+		effectFailureID := request.GetInt("effect_failure_id", 0)
 		confidence := float32(request.GetFloat("confidence", 0.8))
 		namespace := request.GetString("namespace", "/")
 
@@ -403,7 +405,17 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, err
 		}
 
-		link, err := bc.Brain.CreateCausalLink(ctx, nsIDs[0], int64(causeID), int64(effectID), confidence)
+		var effFactID, effFailureID *int64
+		if effectID != 0 {
+			eid := int64(effectID)
+			effFactID = &eid
+		}
+		if effectFailureID != 0 {
+			efid := int64(effectFailureID)
+			effFailureID = &efid
+		}
+
+		link, err := bc.Brain.CreateCausalLink(ctx, nsIDs[0], int64(causeID), effFactID, effFailureID, confidence)
 		if err != nil {
 			return nil, err
 		}
@@ -701,6 +713,18 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, err
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: `{"ok": true}`}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("triage_failure",
+		mcp.WithDescription("Analyzes a failure to identify its root cause fact."),
+		mcp.WithNumber("id", mcp.Description("The ID of the failure to triage."), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := request.GetInt("id", 0)
+
+		if err := bc.Brain.TriageFailure(ctx, int64(id)); err != nil {
+			return nil, err
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: `{"ok": true, "message": "Failure triaged and causal link created."}`}}}, nil
 	})
 
 	return mcpServer

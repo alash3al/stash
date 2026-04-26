@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/alash3al/stash/internal/brain"
 	"github.com/alash3al/stash/internal/config"
@@ -43,7 +42,10 @@ func New(ctx context.Context) (*Context, error) {
 
 	logger := buildLogger(cfg)
 
-	pool, err := db.Open(ctx, cfg.StoreDSN, cfg.EmbeddingModel, cfg.VectorDim)
+	pool, err := db.Open(ctx, cfg.StoreDSN, cfg.EmbeddingModel, cfg.VectorDim, db.PoolConfig{
+		MaxConns: cfg.DBMaxConns,
+		MinConns: cfg.DBMinConns,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -69,17 +71,11 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("load queries: %w", err)
 	}
 
-	window, err := time.ParseDuration(cfg.ConsolidationWindow)
-	if err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("parse consolidation window: %w", err)
-	}
-
 	br, err := brain.New(pool, cachedEmb, reas, q, brain.Config{
 		BatchSize:                      cfg.ConsolidationBatchSize,
 		SimilarityThreshold:            cfg.ConsolidationSimilarityThreshold,
 		DedupThreshold:                 cfg.ConsolidationDedupThreshold,
-		Window:                         window,
+		Window:                         cfg.ConsolidationWindow,
 		DecayFactor:                    cfg.DecayFactor,
 		ExpiryThreshold:                cfg.ExpiryThreshold,
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,

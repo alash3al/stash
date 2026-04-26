@@ -105,4 +105,13 @@ type Reasoner interface {
 
 	// ReasonHypothesisEvidence assesses whether new evidence supports, weakens, or contradicts open hypotheses.
 	ReasonHypothesisEvidence(ctx context.Context, hypotheses []models.Hypothesis, facts []models.Fact) ([]*HypothesisEvidenceResult, error)
+
+	// ReasonFailureCause identifies which fact likely caused a specific failure.
+	// Returns the ID of the cause fact, the confidence score, and an error if reasoning fails.
+	ReasonFailureCause(ctx context.Context, failure models.Failure, facts []models.Fact) (int64, float32, error)
+
+	// Rerank optionally reorders a set of candidate facts for a query using
+	// an LLM-based relevance reranker. Returns a reordered subset of the
+	// provided `results` (preserving models.Fact structure).
+	Rerank(ctx context.Context, query string, results []models.Fact) ([]models.Fact, error)
 }
