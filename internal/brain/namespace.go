@@ -12,6 +12,9 @@ import (
 // CreateNamespace creates a new namespace with the given slug, name, and description.
 // Parent namespaces are auto-created with slug as name if they don't exist.
 func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description string) (int64, error) {
+	if len(slug) > 255 {
+		return 0, fmt.Errorf("slug is too long (max 255 chars)")
+	}
 	if err := validatePath(slug); err != nil {
 		return 0, err
 	}
@@ -55,14 +58,30 @@ func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description str
 func (b *Brain) GetNamespace(ctx context.Context, slug string) (*models.Namespace, error) {
 	var ns models.Namespace
 	err := b.pool.QueryRow(ctx,
-		"SELECT id, slug, name, description, created_at, updated_at FROM namespaces WHERE slug = $1",
+		"SELECT id, slug, name, description, persona, created_at, updated_at FROM namespaces WHERE slug = $1",
 		slug,
-	).Scan(&ns.ID, &ns.Slug, &ns.Name, &ns.Description, &ns.CreatedAt, &ns.UpdatedAt)
+	).Scan(&ns.ID, &ns.Slug, &ns.Name, &ns.Description, &ns.Persona, &ns.CreatedAt, &ns.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrNamespaceNotFound
 		}
 		return nil, fmt.Errorf("get namespace: %w", err)
+	}
+	return &ns, nil
+}
+
+// GetNamespaceByID returns a namespace by ID.
+func (b *Brain) GetNamespaceByID(ctx context.Context, id int64) (*models.Namespace, error) {
+	var ns models.Namespace
+	err := b.pool.QueryRow(ctx,
+		"SELECT id, slug, name, description, persona, created_at, updated_at FROM namespaces WHERE id = $1",
+		id,
+	).Scan(&ns.ID, &ns.Slug, &ns.Name, &ns.Description, &ns.Persona, &ns.CreatedAt, &ns.UpdatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrNamespaceNotFound
+		}
+		return nil, fmt.Errorf("get namespace by id: %w", err)
 	}
 	return &ns, nil
 }
@@ -75,7 +94,7 @@ func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Paginat
 
 	if len(slugs) == 0 {
 		rows, err := b.pool.Query(ctx,
-			"SELECT id, slug, name, description, created_at, updated_at FROM namespaces ORDER BY slug LIMIT $1 OFFSET $2",
+			"SELECT id, slug, name, description, persona, created_at, updated_at FROM namespaces ORDER BY slug LIMIT $1 OFFSET $2",
 			page.Limit, page.Offset,
 		)
 		if err != nil {
@@ -86,7 +105,7 @@ func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Paginat
 		var result []models.Namespace
 		for rows.Next() {
 			var ns models.Namespace
-			if err := rows.Scan(&ns.ID, &ns.Slug, &ns.Name, &ns.Description, &ns.CreatedAt, &ns.UpdatedAt); err != nil {
+			if err := rows.Scan(&ns.ID, &ns.Slug, &ns.Name, &ns.Description, &ns.Persona, &ns.CreatedAt, &ns.UpdatedAt); err != nil {
 				return nil, fmt.Errorf("scan namespace: %w", err)
 			}
 			result = append(result, ns)
@@ -100,7 +119,7 @@ func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Paginat
 	}
 
 	rows, err := b.pool.Query(ctx,
-		"SELECT id, slug, name, description, created_at, updated_at FROM namespaces WHERE id = ANY($1) ORDER BY slug LIMIT $2 OFFSET $3",
+		"SELECT id, slug, name, description, persona, created_at, updated_at FROM namespaces WHERE id = ANY($1) ORDER BY slug LIMIT $2 OFFSET $3",
 		ids, page.Limit, page.Offset,
 	)
 	if err != nil {
@@ -151,6 +170,21 @@ func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.Consoli
 	)
 	if err != nil {
 		return fmt.Errorf("save consolidation progress: %w", err)
+	}
+	return nil
+}
+
+// SetNamespacePersona updates the persona for a namespace.
+func (b *Brain) SetNamespacePersona(ctx context.Context, slug, persona string) error {
+	tag, err := b.pool.Exec(ctx,
+		"UPDATE namespaces SET persona = $2, updated_at = now() WHERE slug = $1",
+		slug, persona,
+	)
+	if err != nil {
+		return fmt.Errorf("set namespace persona: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNamespaceNotFound
 	}
 	return nil
 }

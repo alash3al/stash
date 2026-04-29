@@ -2,6 +2,7 @@
 /stash
 /cli
 stash-*
+*.exe
 
 # Environment files
 .env

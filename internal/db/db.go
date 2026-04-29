@@ -20,16 +20,27 @@ func (discardLogger) Fatalf(string, ...any) {}
 //go:embed migrations/*.sql
 var embedMigrations embed.FS
 
+// PoolConfig holds connection pool sizing parameters.
+type PoolConfig struct {
+	MaxConns int32
+	MinConns int32
+}
+
+// DefaultPoolConfig returns conservative defaults suitable for local development.
+func DefaultPoolConfig() PoolConfig {
+	return PoolConfig{MaxConns: 25, MinConns: 5}
+}
+
 // Open creates a pgxpool, runs goose migrations, and validates the embedding model setting.
 // Returns the pool for application use. The caller is responsible for calling pool.Close().
-func Open(ctx context.Context, dsn string, expectedModel string, vectorDim int) (*pgxpool.Pool, error) {
+func Open(ctx context.Context, dsn string, expectedModel string, vectorDim int, poolCfg PoolConfig) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("pgxpool.ParseConfig: %w", err)
 	}
 
-	config.MaxConns = 25
-	config.MinConns = 5
+	config.MaxConns = poolCfg.MaxConns
+	config.MinConns = poolCfg.MinConns
 	config.MaxConnLifetime = 30 * time.Minute
 	config.MaxConnIdleTime = 5 * time.Minute
 	config.HealthCheckPeriod = 30 * time.Second

@@ -14,6 +14,7 @@ type Namespace struct {
 	Slug        string    `db:"slug"`
 	Name        string    `db:"name"`
 	Description string    `db:"description"`
+	Persona     string    `db:"persona"`
 	CreatedAt   time.Time `db:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at"`
 }
@@ -43,6 +44,7 @@ type Fact struct {
 	Value          *string         `db:"value"`
 	ValidFrom      *time.Time      `db:"valid_from"`
 	ValidUntil     *time.Time      `db:"valid_until"`
+	Metadata       *string         `db:"metadata" json:"metadata,omitempty"`
 	CreatedAt      time.Time       `db:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at"`
 	DeletedAt      *time.Time      `db:"deleted_at"`
@@ -106,18 +108,20 @@ type Context struct {
 	ExpiresAt   time.Time `db:"expires_at"`
 	CreatedAt   time.Time `db:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at"`
+	Persona     string    `json:"persona,omitempty"`
 }
 
-// CausalLink records a cause-effect relationship between two facts.
+// CausalLink records a cause-effect relationship between two facts (or a fact and a failure).
 type CausalLink struct {
-	ID           int64      `db:"id"`
-	NamespaceID  int64      `db:"namespace_id"`
-	CauseFactID  int64      `db:"cause_fact_id"`
-	EffectFactID int64      `db:"effect_fact_id"`
-	Confidence   float32    `db:"confidence"`
-	Method       string     `db:"method"`
-	CreatedAt    time.Time  `db:"created_at"`
-	DeletedAt    *time.Time `db:"deleted_at"`
+	ID               int64      `db:"id"`
+	NamespaceID      int64      `db:"namespace_id"`
+	CauseFactID      int64      `db:"cause_fact_id"`
+	EffectFactID     *int64     `db:"effect_fact_id"`
+	EffectFailureID  *int64     `db:"effect_failure_id"`
+	Confidence       float32    `db:"confidence"`
+	Method           string     `db:"method"`
+	CreatedAt        time.Time  `db:"created_at"`
+	DeletedAt        *time.Time `db:"deleted_at"`
 }
 
 // Hypothesis is a belief held with uncertainty plus a plan to verify it.

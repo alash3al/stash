@@ -56,6 +56,18 @@ func (b *Brain) GetContext(ctx context.Context, namespaceSlug string) (*models.C
 		}
 		return nil, fmt.Errorf("get context: %w", err)
 	}
+	// Populate persona from the namespace and prepend it to the focus
+	if ns, err := b.GetNamespaceByID(ctx, nsID); err == nil {
+		c.Persona = ns.Persona
+		if c.Persona != "" {
+			if c.Focus != "" {
+				c.Focus = c.Persona + "\n\n" + c.Focus
+			} else {
+				c.Focus = c.Persona
+			}
+		}
+	}
+
 	return &c, nil
 }
 

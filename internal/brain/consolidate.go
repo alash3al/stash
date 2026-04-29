@@ -2,8 +2,10 @@ package brain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
@@ -77,17 +79,28 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 		result.Errors = append(result.Errors, errs...)
 	}
 
+	// Fetch the current fact batch once and share it across Stage 2 and 3.5.
+	// This avoids issuing two identical DB queries for the same checkpoint.
+	var sharedFacts []models.Fact
+	if ctx.Err() == nil {
+		var fetchErr error
+		sharedFacts, fetchErr = b.fetchFactBatch(ctx, nsID, cp.LastFactID, b.config.BatchSize)
+		if fetchErr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("fetch shared facts: %v", fetchErr))
+		}
+	}
+
 	// Stage 2: Facts -> Relationships
 	if ctx.Err() == nil {
-		relCount, llmCalls, errs := b.consolidateFactsToRelationships(ctx, nsID, cp)
+		relCount, llmCalls, errs := b.consolidateFactsToRelationships(ctx, nsID, cp, sharedFacts)
 		result.RelationshipsFound = relCount
 		result.LLMCalls += llmCalls
 		result.Errors = append(result.Errors, errs...)
 	}
 
-	// Stage 3.5: Facts -> Causal Links
+	// Stage 3.5: Facts -> Causal Links (reuses the same fetched batch)
 	if ctx.Err() == nil {
-		causalCount, llmCalls, errs := b.consolidateFactsToCausalLinks(ctx, nsID, cp)
+		causalCount, llmCalls, errs := b.consolidateFactsToCausalLinks(ctx, nsID, cp, sharedFacts)
 		result.CausalLinksFound = causalCount
 		result.LLMCalls += llmCalls
 		result.Errors = append(result.Errors, errs...)
@@ -264,12 +277,60 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		confidence := calculateConfidence(len(cluster))
 		now := time.Now().UTC()
 
+		// Extract un-summarizable metadata (error codes, uuids, dates) from episodes
+		metadata := make(map[string]interface{})
+		metadata["source_episode_ids"] = episodeIDs
+
+		// simple patterns
+		uuidRe := regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}`)
+		dateRe := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+		errorRe := regexp.MustCompile(`(?i)error[:= ]+([A-Z0-9_\-]+)`) 
+
+		var uuids []string
+		var dates []string
+		var errorCodes []string
+		seenUUID := map[string]bool{}
+		seenDate := map[string]bool{} 
+		seenErr := map[string]bool{}
+		for _, e := range cluster {
+			for _, u := range uuidRe.FindAllString(e.Content, -1) {
+				if u != "" && !seenUUID[u] {
+					seenUUID[u] = true
+					uuids = append(uuids, u)
+				}
+			}
+			for _, d := range dateRe.FindAllString(e.Content, -1) {
+				if d != "" && !seenDate[d] {
+					seenDate[d] = true
+					dates = append(dates, d)
+				}
+			}
+			if m := errorRe.FindStringSubmatch(e.Content); len(m) > 1 {
+				code := m[1]
+				if code != "" && !seenErr[code] {
+					seenErr[code] = true
+					errorCodes = append(errorCodes, code)
+				}
+			}
+		}
+		if len(uuids) > 0 {
+			metadata["uuids"] = uuids
+		}
+		if len(dates) > 0 {
+			metadata["dates"] = dates
+		}
+		if len(errorCodes) > 0 {
+			metadata["error_codes"] = errorCodes
+		}
+
+		mdBytes, _ := json.Marshal(metadata)
+
 		var factID int64
 		err = b.pool.QueryRow(ctx,
-			`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+			`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, metadata)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
 			nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
-			strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
+			strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now, mdBytes,
 		).Scan(&factID)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("insert fact: %v", err))
@@ -376,6 +437,8 @@ func calculateConfidence(observationCount int) float32 {
 	return float32(observationCount) / float32(observationCount+2)
 }
 
+// cosineSimilarity computes cosine similarity in a single pass.
+// Avoids separate norm loops and redundant sqrt calls.
 func cosineSimilarity(a, b []float32) float32 {
 	if len(a) != len(b) {
 		return 0
@@ -389,7 +452,7 @@ func cosineSimilarity(a, b []float32) float32 {
 	if normA == 0 || normB == 0 {
 		return 0
 	}
-	return dot / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))
+	return dot / float32(math.Sqrt(float64(normA)*float64(normB)))
 }
 
 func strPtrOrNull(s string) *string {
@@ -399,36 +462,39 @@ func strPtrOrNull(s string) *string {
 	return &s
 }
 
-// --- Stage 2: Facts -> Relationships ---
+// --- Shared helper: fetch fact batch ---
 
-func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (count, llmCalls int, errs []string) {
-	sql, args, err := b.queries.FetchFacts(nsID, cp.LastFactID, 50)
+// fetchFactBatch fetches up to limit facts after afterID for the given namespace.
+// Called once per consolidation run and shared across pipeline stages.
+func (b *Brain) fetchFactBatch(ctx context.Context, nsID, afterID int64, limit int) ([]models.Fact, error) {
+	sql, args, err := b.queries.FetchFacts(nsID, afterID, limit)
 	if err != nil {
-		errs = append(errs, fmt.Sprintf("build fetch facts: %v", err))
-		return
+		return nil, fmt.Errorf("build fetch facts: %w", err)
 	}
-
 	rows, err := b.pool.Query(ctx, sql, args...)
 	if err != nil {
-		errs = append(errs, fmt.Sprintf("fetch facts: %v", err))
-		return
+		return nil, fmt.Errorf("fetch facts: %w", err)
 	}
 	defer rows.Close()
 
 	var facts []models.Fact
 	for rows.Next() {
 		var f models.Fact
-		if err := rows.Scan(&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel, &f.Confidence, &f.Entity, &f.Property, &f.Value, &f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt); err != nil {
-			errs = append(errs, fmt.Sprintf("scan fact: %v", err))
-			continue
+		if err := rows.Scan(&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
+			&f.Confidence, &f.Entity, &f.Property, &f.Value,
+			&f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan fact: %w", err)
 		}
 		facts = append(facts, f)
 	}
-	if err := rows.Err(); err != nil {
-		errs = append(errs, fmt.Sprintf("fact rows: %v", err))
-		return
-	}
+	return facts, rows.Err()
+}
 
+// --- Stage 2: Facts -> Relationships ---
+
+// consolidateFactsToRelationships extracts entity relationships from the given fact batch.
+// It accepts the pre-fetched fact slice to avoid re-querying the database.
+func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64, cp *models.ConsolidationProgress, facts []models.Fact) (count, llmCalls int, errs []string) {
 	if len(facts) == 0 {
 		return
 	}
@@ -454,22 +520,23 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 				continue
 			}
 
-			// Check for existing relationship from this fact
-			exists, _ := b.relationshipExists(ctx, nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, fact.ID)
-			if exists {
-				continue
-			}
-
-			_, err := b.pool.Exec(ctx,
+			// ON CONFLICT DO NOTHING is cheaper than a SELECT-then-INSERT round trip.
+			// The conflict target matches relationships_dedup_idx exactly (partial index).
+			tag, err := b.pool.Exec(ctx,
 				`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id)
-				 VALUES ($1, $2, $3, $4, $5, $6)`,
+				 VALUES ($1, $2, $3, $4, $5, $6)
+				 ON CONFLICT (namespace_id, from_entity, relation_type, to_entity, source_fact_id)
+				 WHERE deleted_at IS NULL AND source_fact_id IS NOT NULL
+				 DO NOTHING`,
 				nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, rel.Confidence, fact.ID,
 			)
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("insert relationship: %v", err))
 				continue
 			}
-			count++
+			if tag.RowsAffected() > 0 {
+				count++
+			}
 		}
 	}
 
@@ -480,54 +547,13 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 	return
 }
 
-func (b *Brain) relationshipExists(ctx context.Context, nsID int64, from, relType, to string, sourceFactID int64) (bool, error) {
-	var id int64
-	err := b.pool.QueryRow(ctx,
-		`SELECT id FROM relationships
-		 WHERE namespace_id = $1 AND from_entity = $2 AND relation_type = $3 AND to_entity = $4
-		 AND source_fact_id = $5 AND deleted_at IS NULL LIMIT 1`,
-		nsID, from, relType, to, sourceFactID,
-	).Scan(&id)
-	if err != nil {
-		return false, nil
-	}
-	return true, nil
-}
-
 // --- Stage 3.5: Facts -> Causal Links ---
 
-func (b *Brain) consolidateFactsToCausalLinks(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (count, llmCalls int, errs []string) {
-	sql, args, err := b.queries.FetchFacts(nsID, cp.LastFactID, 30)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("build fetch facts for causal: %v", err))
-		return
-	}
-
-	rows, err := b.pool.Query(ctx, sql, args...)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("fetch facts for causal: %v", err))
-		return
-	}
-	defer rows.Close()
-
-	var facts []models.Fact
-	for rows.Next() {
-		var f models.Fact
-		if err := rows.Scan(&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel, &f.Confidence, &f.Entity, &f.Property, &f.Value, &f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt); err != nil {
-			errs = append(errs, fmt.Sprintf("scan fact for causal: %v", err))
-			continue
-		}
-		facts = append(facts, f)
-	}
-	if err := rows.Err(); err != nil {
-		errs = append(errs, fmt.Sprintf("fact rows for causal: %v", err))
-		return
-	}
-
+// consolidateFactsToCausalLinks detects causal relationships using the shared fact batch.
+func (b *Brain) consolidateFactsToCausalLinks(ctx context.Context, nsID int64, cp *models.ConsolidationProgress, facts []models.Fact) (count, llmCalls int, errs []string) {
 	if len(facts) < 2 {
 		return
 	}
-
 	llmCalls++
 	found, detectErrs := b.DetectCausalLinks(ctx, nsID, facts)
 	count = found

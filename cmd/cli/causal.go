@@ -26,8 +26,13 @@ func causalListCmd(ctx context.Context, cmd *cli.Command) error {
 func causalCreateCmd(ctx context.Context, cmd *cli.Command) error {
 	causeID := cmd.Int("cause-id")
 	effectID := cmd.Int("effect-id")
-	if causeID == 0 || effectID == 0 {
-		return fmt.Errorf("both --cause-id and --effect-id are required")
+	effectFailureID := cmd.Int("effect-failure-id")
+
+	if causeID == 0 {
+		return fmt.Errorf("--cause-id is required")
+	}
+	if effectID == 0 && effectFailureID == 0 {
+		return fmt.Errorf("either --effect-id or --effect-failure-id is required")
 	}
 
 	namespace := cmd.String("namespace")
@@ -37,12 +42,22 @@ func causalCreateCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	nsID, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+	nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
 	if err != nil {
 		return err
 	}
 
-	link, err := bc.Brain.CreateCausalLink(ctx, nsID[0], int64(causeID), int64(effectID), float32(confidence))
+	var effFactID, effFailureID *int64
+	if effectID != 0 {
+		eid := int64(effectID)
+		effFactID = &eid
+	}
+	if effectFailureID != 0 {
+		efid := int64(effectFailureID)
+		effFailureID = &efid
+	}
+
+	link, err := bc.Brain.CreateCausalLink(ctx, nsIDs[0], int64(causeID), effFactID, effFailureID, float32(confidence))
 	if err != nil {
 		return err
 	}
@@ -61,13 +76,87 @@ func causalTraceCmd(ctx context.Context, cmd *cli.Command) error {
 
 	direction := cmd.String("direction")
 	maxDepth := cmd.Int("depth")
+	isMermaid := cmd.Bool("mermaid")
 
 	bc := getBootstrap(cmd)
 	chain, err := bc.Brain.TraceCausalChain(ctx, factID, direction, maxDepth)
 	if err != nil {
 		return err
 	}
-	return printJSON(chain)
+
+	if !isMermaid {
+		return printJSON(chain)
+	}
+
+	// Mermaid visualization logic
+	factIDs := map[int64]bool{factID: true}
+	failureIDs := map[int64]bool{}
+	for _, link := range chain {
+		factIDs[link.CauseFactID] = true
+		if link.EffectFactID != nil {
+			factIDs[*link.EffectFactID] = true
+		}
+		if link.EffectFailureID != nil {
+			failureIDs[*link.EffectFailureID] = true
+		}
+	}
+
+	// Fetch contents
+	factContents := make(map[int64]string)
+	for fid := range factIDs {
+		f, err := bc.Brain.GetFact(ctx, fid)
+		if err == nil {
+			factContents[fid] = f.Content
+		} else {
+			factContents[fid] = fmt.Sprintf("Fact %d", fid)
+		}
+	}
+
+	failureContents := make(map[int64]string)
+	for fid := range failureIDs {
+		f, err := bc.Brain.GetFailure(ctx, fid)
+		if err == nil {
+			failureContents[fid] = f.Content
+		} else {
+			failureContents[fid] = fmt.Sprintf("Failure %d", fid)
+		}
+	}
+
+	truncate := func(s string) string {
+		if len(s) > 50 {
+			return s[:47] + "..."
+		}
+		return s
+	}
+
+	fmt.Println("graph TD")
+	visited := make(map[string]bool)
+	for _, link := range chain {
+		var effectStr string
+		var effectContent string
+
+		if link.EffectFactID != nil {
+			effectStr = fmt.Sprintf("F%d", *link.EffectFactID)
+			effectContent = factContents[*link.EffectFactID]
+		} else if link.EffectFailureID != nil {
+			effectStr = fmt.Sprintf("E%d", *link.EffectFailureID)
+			effectContent = failureContents[*link.EffectFailureID]
+		} else {
+			continue
+		}
+
+		edge := fmt.Sprintf("F%d --> %s", link.CauseFactID, effectStr)
+		if visited[edge] {
+			continue
+		}
+		visited[edge] = true
+
+		fmt.Printf("  F%d[\"%s\"]\n", link.CauseFactID, truncate(factContents[link.CauseFactID]))
+		fmt.Printf("  %s[\"%s\"]\n", effectStr, truncate(effectContent))
+		fmt.Printf("  %s\n", edge)
+	}
+
+	return nil
 }
 
 func causalDeleteCmd(ctx context.Context, cmd *cli.Command) error {

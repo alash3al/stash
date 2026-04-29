@@ -120,6 +120,9 @@ func validateContent(content string) error {
 }
 
 func validatePath(path string) error {
+	if len(path) > 255 {
+		return fmt.Errorf("path is too long (max 255 chars)")
+	}
 	if path == "" || path == "/" {
 		return nil
 	}

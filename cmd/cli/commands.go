@@ -56,12 +56,12 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	limit := cmd.Int("limit")
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.Recall(ctx, namespaces, query, limit)
+	resp, err := bc.Brain.Recall(ctx, namespaces, query, limit)
 	if err != nil {
 		return err
 	}
 
-	return printJSON(results)
+	return printJSON(resp)
 }
 
 func forgetCmd(ctx context.Context, cmd *cli.Command) error {

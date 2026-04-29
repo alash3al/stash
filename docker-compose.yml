@@ -1,56 +1,70 @@
-version: '3.8'
+# =============================================================================
+# Stash — Docker Compose
+# =============================================================================
+# All configuration is sourced from .env (the single source of truth).
+# Copy .env.example to .env before running: cp .env.example .env
+# Start: docker compose up -d
+# Stop:  docker compose down
+# =============================================================================
 
 services:
-  # Database
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL + pgvector
+  # ---------------------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: stash
-      POSTGRES_USER: stash
+      POSTGRES_DB:       stash
+      POSTGRES_USER:     stash
       POSTGRES_PASSWORD: stash_dev_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - stash_net
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stash"]
+      test:     ["CMD-SHELL", "pg_isready -U stash -d stash"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout:  5s
+      retries:  5
+    # Uncomment to expose postgres to host tools (pgAdmin, DBeaver, etc.):
+    # ports:
+    #   - "5432:5432"
 
-  # Stash MCP server + background consolidation
+  # ---------------------------------------------------------------------------
+  # Stash — MCP server + background consolidation
+  # ---------------------------------------------------------------------------
   stash:
     build: .
     command: ["mcp", "serve", "--host", "0.0.0.0", "--port", "8080", "--with-consolidation"]
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
-      # Required
-      STASH_POSTGRES_DSN: postgresql://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
-      STASH_VECTOR_DIM: 1536
-      STASH_MAX_RESULT_SIZE: 10000
-      STASH_OPENAI_API_KEY: ${STASH_OPENAI_API_KEY}
-      STASH_OPENAI_BASE_URL: ${STASH_OPENAI_BASE_URL}
-      STASH_EMBEDDING_MODEL: ${STASH_EMBEDDING_MODEL}
-      STASH_REASONER_MODEL: ${STASH_REASONER_MODEL}
-      STASH_CONTEXT_TTL: 1h
-      STASH_HTTP_ADDR: :9090
-      STASH_LOG_LEVEL: info
-      STASH_LOG_FORMAT: text
-      # Optional consolidation configs
-      STASH_CONSOLIDATION_BATCH_SIZE: 100
-      STASH_CONSOLIDATION_SIMILARITY_THRESHOLD: 0.85
-      STASH_CONSOLIDATION_DEDUP_THRESHOLD: 0.95
-      STASH_CONSOLIDATION_WINDOW: 168h
-      STASH_DECAY_FACTOR: 0.95
-      STASH_EXPIRY_THRESHOLD: 0.1
+      # Override DSN to use the Docker service name (not localhost).
+      # All other vars are sourced from .env via env_file above.
+      STASH_POSTGRES_DSN: postgres://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
+    networks:
+      - stash_net
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/stash", "env"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     restart: unless-stopped
+    healthcheck:
+      test:     ["CMD", "/stash", "env"]
+      interval: 30s
+      timeout:  10s
+      retries:  3
 
+# =============================================================================
+# Volumes & Networks
+# =============================================================================
 volumes:
   postgres_data:
+    driver: local
+
+networks:
+  stash_net:
+    driver: bridge

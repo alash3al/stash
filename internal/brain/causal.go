@@ -16,30 +16,49 @@ func (b *Brain) DetectCausalLinks(ctx context.Context, nsID int64, facts []model
 		return 0, nil
 	}
 
-	links, err := b.reasoner.ReasonCausalLinks(ctx, facts)
-	if err != nil {
-		return 0, []string{fmt.Sprintf("reason causal links: %v", err)}
-	}
+	// For large batches, process in sliding windows to avoid hitting token limits.
+	window := 30
+	step := 25 // overlap to capture cross-window links
+	totalCount := 0
+	var allErrs []string
 
-	var count int
-	for _, link := range links {
-		if link.CauseFactID == link.EffectFactID {
+	for start := 0; start < len(facts); start += step {
+		end := start + window
+		if end > len(facts) {
+			end = len(facts)
+		}
+		windowFacts := facts[start:end]
+
+		links, err := b.reasoner.ReasonCausalLinks(ctx, windowFacts)
+		if err != nil {
+			allErrs = append(allErrs, fmt.Sprintf("reason causal links window %d-%d: %v", start, end, err))
 			continue
 		}
 
-		_, err := b.pool.Exec(ctx,
-			`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, confidence, method)
-			 VALUES ($1, $2, $3, $4, 'extracted')
-			 ON CONFLICT (cause_fact_id, effect_fact_id) WHERE deleted_at IS NULL DO NOTHING`,
-			nsID, link.CauseFactID, link.EffectFactID, link.Confidence,
-		)
-		if err != nil {
-			return count, []string{fmt.Sprintf("insert causal link: %v", err)}
+		for _, link := range links {
+			if link.CauseFactID == link.EffectFactID {
+				continue
+			}
+
+			_, err := b.pool.Exec(ctx,
+				`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, confidence, method)
+				 VALUES ($1, $2, $3, $4, 'extracted')
+				 ON CONFLICT (cause_fact_id, effect_fact_id) WHERE deleted_at IS NULL DO NOTHING`,
+				nsID, link.CauseFactID, link.EffectFactID, link.Confidence,
+			)
+			if err != nil {
+				allErrs = append(allErrs, fmt.Sprintf("insert causal link: %v", err))
+				continue
+			}
+			totalCount++
 		}
-		count++
+
+		if end == len(facts) {
+			break
+		}
 	}
 
-	return count, nil
+	return totalCount, allErrs
 }
 
 // ListCausalLinks returns causal links for namespaces matching the given paths.
@@ -52,7 +71,7 @@ func (b *Brain) ListCausalLinks(ctx context.Context, namespaceSlugs []string, pa
 	page = page.Sanitize()
 
 	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, cause_fact_id, effect_fact_id, confidence, method, created_at, deleted_at
+		`SELECT id, namespace_id, cause_fact_id, effect_fact_id, effect_failure_id, confidence, method, created_at, deleted_at
 		 FROM causal_links WHERE namespace_id = ANY($1) AND deleted_at IS NULL
 		 ORDER BY id LIMIT $2 OFFSET $3`,
 		nsIDs, page.Limit, page.Offset,
@@ -65,7 +84,7 @@ func (b *Brain) ListCausalLinks(ctx context.Context, namespaceSlugs []string, pa
 	var result []models.CausalLink
 	for rows.Next() {
 		var cl models.CausalLink
-		if err := rows.Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.Confidence, &cl.Method, &cl.CreatedAt, &cl.DeletedAt); err != nil {
+		if err := rows.Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.EffectFailureID, &cl.Confidence, &cl.Method, &cl.CreatedAt, &cl.DeletedAt); err != nil {
 			return nil, fmt.Errorf("scan causal link: %w", err)
 		}
 		result = append(result, cl)
@@ -74,22 +93,22 @@ func (b *Brain) ListCausalLinks(ctx context.Context, namespaceSlugs []string, pa
 }
 
 // CreateCausalLink manually asserts a cause-effect relationship between two facts.
-func (b *Brain) CreateCausalLink(ctx context.Context, nsID, causeFactID, effectFactID int64, confidence float32) (*models.CausalLink, error) {
-	if causeFactID == effectFactID {
+func (b *Brain) CreateCausalLink(ctx context.Context, nsID, causeFactID int64, effectFactID, effectFailureID *int64, confidence float32) (*models.CausalLink, error) {
+	if effectFactID != nil && causeFactID == *effectFactID {
 		return nil, fmt.Errorf("brain: cause and effect fact IDs must differ")
 	}
 
 	var cl models.CausalLink
 	err := b.pool.QueryRow(ctx,
-		`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, confidence, method)
-		 VALUES ($1, $2, $3, $4, 'asserted')
-		 ON CONFLICT (cause_fact_id, effect_fact_id) WHERE deleted_at IS NULL DO NOTHING
-		 RETURNING id, namespace_id, cause_fact_id, effect_fact_id, confidence, method, created_at`,
-		nsID, causeFactID, effectFactID, confidence,
-	).Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.Confidence, &cl.Method, &cl.CreatedAt)
+		`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, effect_failure_id, confidence, method)
+		 VALUES ($1, $2, $3, $4, $5, 'asserted')
+		 ON CONFLICT (cause_fact_id, COALESCE(effect_fact_id, 0), COALESCE(effect_failure_id, 0)) WHERE deleted_at IS NULL DO NOTHING
+		 RETURNING id, namespace_id, cause_fact_id, effect_fact_id, effect_failure_id, confidence, method, created_at`,
+		nsID, causeFactID, effectFactID, effectFailureID, confidence,
+	).Scan(&cl.ID, &cl.NamespaceID, &cl.CauseFactID, &cl.EffectFactID, &cl.EffectFailureID, &cl.Confidence, &cl.Method, &cl.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, fmt.Errorf("brain: causal link already exists between facts %d and %d", causeFactID, effectFactID)
+			return nil, fmt.Errorf("brain: causal link already exists")
 		}
 		return nil, fmt.Errorf("create causal link: %w", err)
 	}
@@ -108,6 +127,39 @@ func (b *Brain) DeleteCausalLink(ctx context.Context, id int64) error {
 	if tag.RowsAffected() == 0 {
 		return ErrCausalLinkNotFound
 	}
+	return nil
+}
+
+// TriageFailure attempts to identify the root cause of a failure by comparing it against recent facts.
+func (b *Brain) TriageFailure(ctx context.Context, failureID int64) error {
+	f, err := b.GetFailure(ctx, failureID)
+	if err != nil {
+		return err
+	}
+
+	// Fetch recent facts from the same namespace to provide context for triage.
+	ns, err := b.GetNamespaceByID(ctx, f.NamespaceID)
+	if err != nil {
+		return fmt.Errorf("triage: get namespace: %w", err)
+	}
+
+	facts, err := b.QueryFacts(ctx, []string{ns.Slug}, nil, nil, Pagination{Limit: 20})
+	if err != nil {
+		return fmt.Errorf("triage: query facts: %w", err)
+	}
+
+	causeID, confidence, err := b.reasoner.ReasonFailureCause(ctx, *f, facts)
+	if err != nil {
+		return fmt.Errorf("triage: reason failure cause: %w", err)
+	}
+
+	if causeID > 0 {
+		_, err := b.CreateCausalLink(ctx, f.NamespaceID, causeID, nil, &f.ID, confidence)
+		if err != nil {
+			return fmt.Errorf("triage: create causal link: %w", err)
+		}
+	}
+
 	return nil
 }
 

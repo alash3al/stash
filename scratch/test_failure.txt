@@ -1,0 +1,3 @@
+The configuration engine failed to load the .env file.
+Reason: The file path was set to /tmp instead of the project root.
+Lesson: Always use absolute paths for configuration files.

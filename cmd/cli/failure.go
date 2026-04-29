@@ -99,3 +99,19 @@ func failureDeleteCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 	return printJSON(map[string]string{"message": "Failure deleted successfully"})
 }
+func failureTriageCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("failure ID is required")
+	}
+	var id int64
+	if _, err := fmt.Sscanf(args.First(), "%d", &id); err != nil {
+		return fmt.Errorf("invalid failure ID: %w", err)
+	}
+
+	bc := getBootstrap(cmd)
+	if err := bc.Brain.TriageFailure(ctx, id); err != nil {
+		return err
+	}
+	return printJSON(map[string]string{"message": "Failure triaged successfully"})
+}

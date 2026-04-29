@@ -41,3 +41,26 @@ func namespaceListCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 	return printJSON(namespaces)
 }
+
+func namespacePersonaCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("namespace slug is required")
+	}
+	slug := args.First()
+	persona := cmd.String("persona")
+
+	bc := getBootstrap(cmd)
+	if persona != "" {
+		if err := bc.Brain.SetNamespacePersona(ctx, slug, persona); err != nil {
+			return err
+		}
+		return printJSON(map[string]string{"message": "Persona updated successfully"})
+	}
+
+	ns, err := bc.Brain.GetNamespace(ctx, slug)
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]string{"persona": ns.Persona})
+}
