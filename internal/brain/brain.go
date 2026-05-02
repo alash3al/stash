@@ -146,6 +146,14 @@ func splitPath(path string) []string {
 	return strings.Split(path, "/")
 }
 
+// escapeLikePattern escapes the PostgreSQL LIKE meta-characters so the input
+// is matched as a literal. Use with `ESCAPE '\'` in the query.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func escapeLikePattern(s string) string {
+	return likeEscaper.Replace(s)
+}
+
 // resolveNamespaceID returns the namespace ID for an exact path.
 // Returns ErrNamespaceNotFound if no matching namespace exists.
 func (b *Brain) resolveNamespaceID(ctx context.Context, path string) (int64, error) {
@@ -216,9 +224,12 @@ func (b *Brain) resolveNamespaceIDWithDescendants(ctx context.Context, path stri
 		return ids, rows.Err()
 	}
 
+	// Slug segments allow `_` (see pathSegmentRe), which is a LIKE wildcard
+	// in PostgreSQL. Escape it so `/foo_bar` only matches its own descendants,
+	// not `/fooXbar/...` for any X.
 	rows, err := b.pool.Query(ctx,
-		"SELECT id FROM namespaces WHERE slug = $1 OR slug LIKE $2",
-		path, path+"/%",
+		`SELECT id FROM namespaces WHERE slug = $1 OR slug LIKE $2 ESCAPE '\'`,
+		path, escapeLikePattern(path)+"/%",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("resolve namespace descendants: %w", err)
