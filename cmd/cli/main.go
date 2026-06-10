@@ -39,7 +39,7 @@ func main() {
 					&cli.StringFlag{Name: "http-host", Value: "0.0.0.0", Usage: "HTTP server host"},
 					&cli.StringFlag{Name: "http-port", Value: "9090", Usage: "HTTP server port (metrics, health)"},
 					&cli.StringFlag{Name: "mcp-host", Value: "0.0.0.0", Usage: "MCP SSE server host"},
-					&cli.StringFlag{Name: "mcp-port", Value: "8080", Usage: "MCP SSE server port"},
+					&cli.StringFlag{Name: "mcp-port", Value: "8080", Usage: "MCP SSE server port (use 8080, not 8081)"},
 					&cli.DurationFlag{Name: "consolidate-interval", Value: 5 * time.Minute, Usage: "Consolidation interval"},
 					&cli.StringSliceFlag{Name: "consolidate-namespaces", Usage: "Namespaces to consolidate (default: all)"},
 				},
