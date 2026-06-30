@@ -94,6 +94,23 @@ Atlas Cloud docs: [https://www.atlascloud.ai/docs](https://www.atlascloud.ai/doc
 
 ## Troubleshooting
 
+**`curl /sse` prints an `event: endpoint` line, then appears to hang**
+
+This is expected — the server is healthy, not stuck. `/sse` is a long-lived
+[Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+stream: it emits the initial `endpoint` event (the `/message?sessionId=...` URL the
+client posts back to) and then holds the connection open for the MCP session. A raw
+`curl` can't complete the MCP handshake, so it just waits.
+
+- To check the server is up *without* holding the stream open, request the status code only:
+
+  ```bash
+  curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/sse   # expect 200
+  ```
+
+- For a real end-to-end check, connect an MCP client (see [Connect your MCP client](#2-connect-your-mcp-client))
+  and confirm Stash appears in its tool list.
+
 **MCP client can't connect**
 
 - Confirm `docker compose up` finished and port 8080 is not in use elsewhere.
