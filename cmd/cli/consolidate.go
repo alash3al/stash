@@ -71,6 +71,11 @@ func consolidateServeCmd(ctx context.Context, cmd *cli.Command) error {
 	for {
 		select {
 		case <-ticker.C:
+			if updated, err := bc.Brain.BackfillMissingEmbeddings(ctx); err != nil {
+				log.Printf("Embedding backfill deferred: %v", err)
+			} else if updated > 0 {
+				log.Printf("Embedding backfill updated %d memories", updated)
+			}
 			ids, err := bc.Brain.ResolveNamespaceIDs(ctx, namespaces)
 			if err != nil {
 				log.Printf("Failed to resolve namespaces: %v", err)

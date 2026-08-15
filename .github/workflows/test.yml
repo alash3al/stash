@@ -1,0 +1,39 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: stash_test
+          POSTGRES_USER: stash
+          POSTGRES_PASSWORD: stash_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stash -d stash_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      STASH_TEST_POSTGRES_DSN: postgresql://stash:stash_test_password@localhost:5432/stash_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - run: gofmt -d .
+      - run: go vet ./...
+      - run: go test -race ./... -count=1
+      - run: go build ./cmd/cli/

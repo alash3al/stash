@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/alash3al/stash/internal/models"
+	"github.com/alash3al/stash/internal/reasoner"
 )
 
 func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (autoConfirmed, autoRejected, updated, llmCalls int, errs []string) {
@@ -31,7 +32,7 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 		return
 	}
 
-	factSQL, factArgs, err := b.queries.FetchFacts(nsID, cp.LastHypothesisFactID, 30)
+	factSQL, factArgs, err := b.queries.FetchFacts(nsID, cp.LastHypothesisFactID, b.consolidationBatchLimit(30))
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch facts for hypotheses: %v", err))
 		return
@@ -62,11 +63,20 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 		return
 	}
 
-	llmCalls++
-	results, err := b.reasoner.ReasonHypothesisEvidence(ctx, hypotheses, facts)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("reason hypothesis evidence: %v", err))
-		return
+	var results []*reasoner.HypothesisEvidenceResult
+	hypothesisBatchLimit := b.consolidationBatchLimit(30)
+	for start := 0; start < len(hypotheses); start += hypothesisBatchLimit {
+		end := start + hypothesisBatchLimit
+		if end > len(hypotheses) {
+			end = len(hypotheses)
+		}
+		llmCalls++
+		batchResults, reasonErr := b.reasoner.ReasonHypothesisEvidence(ctx, hypotheses[start:end], facts)
+		if reasonErr != nil {
+			errs = append(errs, fmt.Sprintf("reason hypothesis evidence: %v", reasonErr))
+			return
+		}
+		results = append(results, batchResults...)
 	}
 
 	for _, r := range results {
@@ -125,7 +135,7 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 			maxFactID = f.ID
 		}
 	}
-	if maxFactID > cp.LastHypothesisFactID {
+	if len(errs) == 0 && maxFactID > cp.LastHypothesisFactID {
 		cp.LastHypothesisFactID = maxFactID
 	}
 

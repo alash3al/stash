@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/alash3al/stash/internal/models"
+	"github.com/alash3al/stash/internal/reasoner"
 )
 
 func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (annotated, suggestedComplete, llmCalls int, errs []string) {
@@ -30,7 +31,7 @@ func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *mod
 		return
 	}
 
-	factSQL, factArgs, err := b.queries.FetchFacts(nsID, cp.LastGoalProgressFactID, 30)
+	factSQL, factArgs, err := b.queries.FetchFacts(nsID, cp.LastGoalProgressFactID, b.consolidationBatchLimit(30))
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch facts for goals: %v", err))
 		return
@@ -61,11 +62,20 @@ func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *mod
 		return
 	}
 
-	llmCalls++
-	assessments, err := b.reasoner.ReasonGoalProgress(ctx, goals, facts)
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("reason goal progress: %v", err))
-		return
+	var assessments []*reasoner.GoalProgressAssessment
+	goalBatchLimit := b.consolidationBatchLimit(30)
+	for start := 0; start < len(goals); start += goalBatchLimit {
+		end := start + goalBatchLimit
+		if end > len(goals) {
+			end = len(goals)
+		}
+		llmCalls++
+		batchAssessments, reasonErr := b.reasoner.ReasonGoalProgress(ctx, goals[start:end], facts)
+		if reasonErr != nil {
+			errs = append(errs, fmt.Sprintf("reason goal progress: %v", reasonErr))
+			return
+		}
+		assessments = append(assessments, batchAssessments...)
 	}
 
 	for _, a := range assessments {
@@ -100,7 +110,7 @@ func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *mod
 			maxFactID = f.ID
 		}
 	}
-	if maxFactID > cp.LastGoalProgressFactID {
+	if len(errs) == 0 && maxFactID > cp.LastGoalProgressFactID {
 		cp.LastGoalProgressFactID = maxFactID
 	}
 

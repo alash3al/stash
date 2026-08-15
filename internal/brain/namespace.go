@@ -125,9 +125,9 @@ func (b *Brain) GetOrCreateConsolidationProgress(ctx context.Context, namespaceI
 	err := b.pool.QueryRow(ctx,
 		`INSERT INTO consolidation_progress (namespace_id) VALUES ($1)
 		 ON CONFLICT (namespace_id) DO UPDATE SET updated_at = consolidation_progress.updated_at
-		 RETURNING namespace_id, last_episode_id, last_fact_id, last_relationship_id, last_pattern_fact_id, last_pattern_rel_id, last_goal_progress_fact_id, last_failure_id, last_failure_episode_id, last_hypothesis_fact_id, last_decay_run, last_run, updated_at`,
+		 RETURNING namespace_id, last_episode_id, last_fact_id, last_relationship_id, last_pattern_fact_id, last_pattern_rel_id, last_goal_progress_fact_id, last_failure_id, last_failure_episode_id, last_hypothesis_fact_id, last_causal_fact_id, last_decay_run, last_run, updated_at`,
 		namespaceID,
-	).Scan(&cp.NamespaceID, &cp.LastEpisodeID, &cp.LastFactID, &cp.LastRelationshipID, &cp.LastPatternFactID, &cp.LastPatternRelID, &cp.LastGoalProgressFactID, &cp.LastFailureID, &cp.LastFailureEpisodeID, &cp.LastHypothesisFactID, &cp.LastDecayRun, &cp.LastRun, &cp.UpdatedAt)
+	).Scan(&cp.NamespaceID, &cp.LastEpisodeID, &cp.LastFactID, &cp.LastRelationshipID, &cp.LastPatternFactID, &cp.LastPatternRelID, &cp.LastGoalProgressFactID, &cp.LastFailureID, &cp.LastFailureEpisodeID, &cp.LastHypothesisFactID, &cp.LastCausalFactID, &cp.LastDecayRun, &cp.LastRun, &cp.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get consolidation progress: %w", err)
 	}
@@ -142,12 +142,12 @@ func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.Consoli
 			last_episode_id = $2, last_fact_id = $3, last_relationship_id = $4,
 			last_pattern_fact_id = $5, last_pattern_rel_id = $6,
 			last_goal_progress_fact_id = $7, last_failure_id = $8, last_failure_episode_id = $9, last_hypothesis_fact_id = $10,
-			last_decay_run = $11, last_run = $12, updated_at = $13
+			last_causal_fact_id = $11, last_decay_run = $12, last_run = $13, updated_at = $14
 		 WHERE namespace_id = $1`,
 		cp.NamespaceID, cp.LastEpisodeID, cp.LastFactID, cp.LastRelationshipID,
 		cp.LastPatternFactID, cp.LastPatternRelID,
 		cp.LastGoalProgressFactID, cp.LastFailureID, cp.LastFailureEpisodeID, cp.LastHypothesisFactID,
-		cp.LastDecayRun, now, now,
+		cp.LastCausalFactID, cp.LastDecayRun, now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("save consolidation progress: %w", err)

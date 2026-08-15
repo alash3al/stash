@@ -23,8 +23,9 @@ func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *mode
 	rows, err := b.pool.Query(ctx,
 		`SELECT id, content, value, confidence FROM facts
 		 WHERE namespace_id = $1 AND entity = $2 AND property = $3
-		 AND id != $4 AND deleted_at IS NULL AND valid_until IS NULL`,
-		nsID, *fact.Entity, *fact.Property, fact.ID,
+		 AND id != $4 AND deleted_at IS NULL AND valid_until IS NULL
+		 ORDER BY confidence DESC, id DESC LIMIT $5`,
+		nsID, *fact.Entity, *fact.Property, fact.ID, b.consolidationBatchLimit(20),
 	)
 	if err != nil {
 		return 0, 0, fmt.Errorf("detect contradictions query: %w", err)

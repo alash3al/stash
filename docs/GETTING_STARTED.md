@@ -77,6 +77,9 @@ If tools fail, check `.env`:
 | `STASH_OPENAI_BASE_URL` | API base URL |
 | `STASH_EMBEDDING_MODEL` | Must match `STASH_VECTOR_DIM` (1536 for `text-embedding-3-small`) |
 | `STASH_REASONER_MODEL` | Model used during consolidation |
+| `STASH_REASONER_API_KEY` | Optional separate key for the consolidation reasoner |
+| `STASH_REASONER_BASE_URL` | Optional separate OpenAI-compatible reasoner endpoint |
+| `STASH_RETRIEVAL_LEARNING_ENABLED` | Enable bounded outcome-aware recall; defaults to `false` |
 
 **Running fully local?** See [LOCAL_OLLAMA.md](LOCAL_OLLAMA.md) — Ollama on the host, no cloud API key.
 

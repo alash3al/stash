@@ -45,21 +45,21 @@ func main() {
 				},
 				Action: serveAllCmd,
 			},
-		{
-			Name:  "http",
-			Usage: "HTTP server commands",
-			Commands: []*cli.Command{
-				{
-					Name:   "serve",
-					Usage:  "Start HTTP server (metrics, health)",
-					Action: serveHTTP,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "host", Value: "0.0.0.0"},
-						&cli.StringFlag{Name: "port", Value: "9090"},
+			{
+				Name:  "http",
+				Usage: "HTTP server commands",
+				Commands: []*cli.Command{
+					{
+						Name:   "serve",
+						Usage:  "Start HTTP server (metrics, health)",
+						Action: serveHTTP,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "host", Value: "0.0.0.0"},
+							&cli.StringFlag{Name: "port", Value: "9090"},
+						},
 					},
 				},
 			},
-		},
 			{
 				Name:   "env",
 				Usage:  "Show environment variables and configuration",
@@ -108,6 +108,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
 					&cli.IntFlag{Name: "limit", Value: 10, Usage: "Max results"},
+					&cli.BoolFlag{Name: "no-learning", Usage: "Do not record this recall or apply learned utility"},
 				},
 			},
 			{
@@ -135,14 +136,14 @@ func main() {
 						Usage:  "Hard-delete an episode by ID",
 						Action: purgeEpisodeCmd,
 					},
-		{
-			Name:   "forget",
-			Usage:  "Soft-delete a matching episode",
-			Action: forgetCmd,
-			Flags: []cli.Flag{
-				&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
-			},
-		},
+					{
+						Name:   "forget",
+						Usage:  "Soft-delete a matching episode",
+						Action: forgetCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
+						},
+					},
 				},
 			},
 			{
@@ -157,6 +158,8 @@ func main() {
 					&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
 				},
 			},
+			shadowCommand(),
+			evalCommand(),
 			{
 				Name:  "consolidate",
 				Usage: "Consolidate memories",
@@ -204,265 +207,265 @@ func main() {
 					},
 				},
 			},
-		{
-			Name:  "contradictions",
-			Usage: "Manage contradictions",
-			Commands: []*cli.Command{
-				{
-					Name:   "list",
-					Usage:  "List unresolved contradictions",
-					Action: contradictionsListCmd,
-					Flags: []cli.Flag{
-						&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
-						&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
-						&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+			{
+				Name:  "contradictions",
+				Usage: "Manage contradictions",
+				Commands: []*cli.Command{
+					{
+						Name:   "list",
+						Usage:  "List unresolved contradictions",
+						Action: contradictionsListCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+							&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
+							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+						},
 					},
-				},
-				{
-					Name:   "resolve",
-					Usage:  "Resolve a contradiction by ID",
-					Action: contradictionResolveCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "resolution", Value: "resolved", Usage: "Resolution note"},
+					{
+						Name:   "resolve",
+						Usage:  "Resolve a contradiction by ID",
+						Action: contradictionResolveCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "resolution", Value: "resolved", Usage: "Resolution note"},
+						},
 					},
 				},
 			},
-		},
-		{
-			Name:  "causal",
-			Usage: "Manage causal links between facts",
-			Commands: []*cli.Command{
-				{
-					Name:   "list",
-					Usage:  "List causal links",
-					Action: causalListCmd,
-					Flags: []cli.Flag{
-						&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
-						&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
-						&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+			{
+				Name:  "causal",
+				Usage: "Manage causal links between facts",
+				Commands: []*cli.Command{
+					{
+						Name:   "list",
+						Usage:  "List causal links",
+						Action: causalListCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+							&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
+							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+						},
 					},
-				},
-				{
-					Name:   "create",
-					Usage:  "Create a causal link between two facts",
-					Action: causalCreateCmd,
-					Flags: []cli.Flag{
-						&cli.IntFlag{Name: "cause-id", Usage: "ID of the cause fact"},
-						&cli.IntFlag{Name: "effect-id", Usage: "ID of the effect fact"},
-						&cli.FloatFlag{Name: "confidence", Value: 0.8, Usage: "Confidence score (0-1)"},
-						&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+					{
+						Name:   "create",
+						Usage:  "Create a causal link between two facts",
+						Action: causalCreateCmd,
+						Flags: []cli.Flag{
+							&cli.IntFlag{Name: "cause-id", Usage: "ID of the cause fact"},
+							&cli.IntFlag{Name: "effect-id", Usage: "ID of the effect fact"},
+							&cli.FloatFlag{Name: "confidence", Value: 0.8, Usage: "Confidence score (0-1)"},
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+						},
 					},
-				},
-				{
-					Name:   "trace",
-					Usage:  "Trace causal chain from a fact",
-					Action: causalTraceCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "direction", Value: "forward", Usage: "Trace direction: forward or backward"},
-						&cli.IntFlag{Name: "depth", Value: 10, Usage: "Max traversal depth"},
+					{
+						Name:   "trace",
+						Usage:  "Trace causal chain from a fact",
+						Action: causalTraceCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "direction", Value: "forward", Usage: "Trace direction: forward or backward"},
+							&cli.IntFlag{Name: "depth", Value: 10, Usage: "Max traversal depth"},
+						},
 					},
-				},
-				{
-					Name:   "delete",
-					Usage:  "Delete a causal link by ID",
-					Action: causalDeleteCmd,
+					{
+						Name:   "delete",
+						Usage:  "Delete a causal link by ID",
+						Action: causalDeleteCmd,
+					},
 				},
 			},
-		},
-		{
-			Name:  "hypothesis",
-			Usage: "Manage hypotheses",
-			Commands: []*cli.Command{
-				{
-					Name:   "create",
-					Usage:  "Create a hypothesis",
-					Action: hypothesisCreateCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
-						&cli.StringFlag{Name: "verification-plan", Usage: "How to verify this hypothesis"},
-						&cli.FloatFlag{Name: "confidence", Value: 0.5, Usage: "Confidence score (0-1)"},
-						&cli.StringFlag{Name: "source-fact-ids", Usage: "Comma-separated fact IDs supporting this hypothesis"},
+			{
+				Name:  "hypothesis",
+				Usage: "Manage hypotheses",
+				Commands: []*cli.Command{
+					{
+						Name:   "create",
+						Usage:  "Create a hypothesis",
+						Action: hypothesisCreateCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+							&cli.StringFlag{Name: "verification-plan", Usage: "How to verify this hypothesis"},
+							&cli.FloatFlag{Name: "confidence", Value: 0.5, Usage: "Confidence score (0-1)"},
+							&cli.StringFlag{Name: "source-fact-ids", Usage: "Comma-separated fact IDs supporting this hypothesis"},
+						},
 					},
-				},
-				{
-					Name:   "list",
-					Usage:  "List hypotheses",
-					Action: hypothesisListCmd,
-					Flags: []cli.Flag{
-						&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
-						&cli.StringFlag{Name: "status", Usage: "Filter by status: proposed, testing, confirmed, rejected"},
-						&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
-						&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+					{
+						Name:   "list",
+						Usage:  "List hypotheses",
+						Action: hypothesisListCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+							&cli.StringFlag{Name: "status", Usage: "Filter by status: proposed, testing, confirmed, rejected"},
+							&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
+							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+						},
 					},
-				},
-				{
-					Name:   "show",
-					Usage:  "Show a hypothesis by ID",
-					Action: hypothesisShowCmd,
-				},
-				{
-					Name:   "test",
-					Usage:  "Mark a hypothesis as testing",
-					Action: hypothesisTestCmd,
-				},
-				{
-					Name:   "confirm",
-					Usage:  "Confirm a hypothesis and auto-create a fact",
-					Action: hypothesisConfirmCmd,
-				},
-				{
-					Name:   "reject",
-					Usage:  "Reject a hypothesis",
-					Action: hypothesisRejectCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "reason", Usage: "Rejection reason"},
+					{
+						Name:   "show",
+						Usage:  "Show a hypothesis by ID",
+						Action: hypothesisShowCmd,
 					},
-				},
-				{
-					Name:   "refine",
-					Usage:  "Refine a hypothesis (resets to proposed)",
-					Action: hypothesisRefineCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "content", Usage: "Updated hypothesis content"},
-						&cli.StringFlag{Name: "verification-plan", Usage: "Updated verification plan"},
-						&cli.FloatFlag{Name: "confidence", Usage: "Updated confidence score"},
+					{
+						Name:   "test",
+						Usage:  "Mark a hypothesis as testing",
+						Action: hypothesisTestCmd,
 					},
-				},
-				{
-					Name:   "delete",
-					Usage:  "Delete a hypothesis",
-					Action: hypothesisDeleteCmd,
+					{
+						Name:   "confirm",
+						Usage:  "Confirm a hypothesis and auto-create a fact",
+						Action: hypothesisConfirmCmd,
+					},
+					{
+						Name:   "reject",
+						Usage:  "Reject a hypothesis",
+						Action: hypothesisRejectCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "reason", Usage: "Rejection reason"},
+						},
+					},
+					{
+						Name:   "refine",
+						Usage:  "Refine a hypothesis (resets to proposed)",
+						Action: hypothesisRefineCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "content", Usage: "Updated hypothesis content"},
+							&cli.StringFlag{Name: "verification-plan", Usage: "Updated verification plan"},
+							&cli.FloatFlag{Name: "confidence", Usage: "Updated confidence score"},
+						},
+					},
+					{
+						Name:   "delete",
+						Usage:  "Delete a hypothesis",
+						Action: hypothesisDeleteCmd,
+					},
 				},
 			},
-		},
-		{
-			Name:  "goal",
-			Usage: "Manage goals",
-			Commands: []*cli.Command{
-				{
-					Name:   "create",
-					Usage:  "Create a goal",
-					Action: goalCreateCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
-						&cli.IntFlag{Name: "parent-id", Usage: "Parent goal ID for sub-goals"},
-						&cli.IntFlag{Name: "priority", Value: 0, Usage: "Priority (higher = more important)"},
+			{
+				Name:  "goal",
+				Usage: "Manage goals",
+				Commands: []*cli.Command{
+					{
+						Name:   "create",
+						Usage:  "Create a goal",
+						Action: goalCreateCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+							&cli.IntFlag{Name: "parent-id", Usage: "Parent goal ID for sub-goals"},
+							&cli.IntFlag{Name: "priority", Value: 0, Usage: "Priority (higher = more important)"},
+						},
 					},
-				},
-				{
-					Name:   "list",
-					Usage:  "List goals",
-					Action: goalListCmd,
-					Flags: []cli.Flag{
-						&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
-						&cli.StringFlag{Name: "status", Usage: "Filter by status: active, completed, abandoned"},
-						&cli.IntFlag{Name: "parent-id", Usage: "Filter by parent goal ID"},
-						&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
-						&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+					{
+						Name:   "list",
+						Usage:  "List goals",
+						Action: goalListCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+							&cli.StringFlag{Name: "status", Usage: "Filter by status: active, completed, abandoned"},
+							&cli.IntFlag{Name: "parent-id", Usage: "Filter by parent goal ID"},
+							&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
+							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+						},
 					},
-				},
-				{
-					Name:   "show",
-					Usage:  "Show a goal with sub-goal progress",
-					Action: goalShowCmd,
-				},
-				{
-					Name:   "complete",
-					Usage:  "Complete a goal",
-					Action: goalCompleteCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "notes", Usage: "Completion notes"},
+					{
+						Name:   "show",
+						Usage:  "Show a goal with sub-goal progress",
+						Action: goalShowCmd,
 					},
-				},
-				{
-					Name:   "abandon",
-					Usage:  "Abandon a goal",
-					Action: goalAbandonCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "notes", Usage: "Abandonment reason"},
+					{
+						Name:   "complete",
+						Usage:  "Complete a goal",
+						Action: goalCompleteCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "notes", Usage: "Completion notes"},
+						},
 					},
-				},
-				{
-					Name:   "update",
-					Usage:  "Update an active goal",
-					Action: goalUpdateCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "content", Usage: "Updated goal content"},
-						&cli.IntFlag{Name: "priority", Usage: "Updated priority"},
-						&cli.StringFlag{Name: "notes", Usage: "Updated notes"},
+					{
+						Name:   "abandon",
+						Usage:  "Abandon a goal",
+						Action: goalAbandonCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "notes", Usage: "Abandonment reason"},
+						},
 					},
-				},
-				{
-					Name:   "delete",
-					Usage:  "Delete a goal and its sub-goals",
-					Action: goalDeleteCmd,
+					{
+						Name:   "update",
+						Usage:  "Update an active goal",
+						Action: goalUpdateCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "content", Usage: "Updated goal content"},
+							&cli.IntFlag{Name: "priority", Usage: "Updated priority"},
+							&cli.StringFlag{Name: "notes", Usage: "Updated notes"},
+						},
+					},
+					{
+						Name:   "delete",
+						Usage:  "Delete a goal and its sub-goals",
+						Action: goalDeleteCmd,
+					},
 				},
 			},
-		},
-		{
-			Name:  "failure",
-			Usage: "Manage failure records",
-			Commands: []*cli.Command{
-				{
-					Name:   "create",
-					Usage:  "Record a failure",
-					Action: failureCreateCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
-						&cli.StringFlag{Name: "reason", Usage: "Why it failed (required)"},
-						&cli.StringFlag{Name: "lesson", Usage: "What to do instead (required)"},
-						&cli.IntFlag{Name: "goal-id", Usage: "Related goal ID"},
+			{
+				Name:  "failure",
+				Usage: "Manage failure records",
+				Commands: []*cli.Command{
+					{
+						Name:   "create",
+						Usage:  "Record a failure",
+						Action: failureCreateCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+							&cli.StringFlag{Name: "reason", Usage: "Why it failed (required)"},
+							&cli.StringFlag{Name: "lesson", Usage: "What to do instead (required)"},
+							&cli.IntFlag{Name: "goal-id", Usage: "Related goal ID"},
+						},
 					},
-				},
-				{
-					Name:   "list",
-					Usage:  "List failures",
-					Action: failureListCmd,
-					Flags: []cli.Flag{
-						&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
-						&cli.IntFlag{Name: "goal-id", Usage: "Filter by goal ID"},
-						&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
-						&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+					{
+						Name:   "list",
+						Usage:  "List failures",
+						Action: failureListCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+							&cli.IntFlag{Name: "goal-id", Usage: "Filter by goal ID"},
+							&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
+							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+						},
 					},
-				},
-				{
-					Name:   "show",
-					Usage:  "Show a failure by ID",
-					Action: failureShowCmd,
-				},
-				{
-					Name:   "delete",
-					Usage:  "Delete a failure",
-					Action: failureDeleteCmd,
+					{
+						Name:   "show",
+						Usage:  "Show a failure by ID",
+						Action: failureShowCmd,
+					},
+					{
+						Name:   "delete",
+						Usage:  "Delete a failure",
+						Action: failureDeleteCmd,
+					},
 				},
 			},
-		},
-		{
-			Name:  "mcp",
+			{
+				Name:  "mcp",
 				Usage: "MCP server for agent integration",
 				Commands: []*cli.Command{
-				{
-					Name:   "serve",
-					Usage:  "Start MCP server over SSE",
-					Action: mcpServeCmd,
-					Flags: []cli.Flag{
-						&cli.StringFlag{Name: "host", Value: "0.0.0.0"},
-						&cli.StringFlag{Name: "port", Value: "8080"},
-						&cli.BoolFlag{Name: "with-consolidation", Usage: "Run consolidation in background alongside MCP server"},
-						&cli.DurationFlag{Name: "consolidate-interval", Value: 5 * time.Minute, Usage: "Consolidation interval"},
-						&cli.StringSliceFlag{Name: "consolidate-namespaces", Usage: "Namespaces to consolidate (default: all)"},
+					{
+						Name:   "serve",
+						Usage:  "Start MCP server over SSE",
+						Action: mcpServeCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "host", Value: "0.0.0.0"},
+							&cli.StringFlag{Name: "port", Value: "8080"},
+							&cli.BoolFlag{Name: "with-consolidation", Usage: "Run consolidation in background alongside MCP server"},
+							&cli.DurationFlag{Name: "consolidate-interval", Value: 5 * time.Minute, Usage: "Consolidation interval"},
+							&cli.StringSliceFlag{Name: "consolidate-namespaces", Usage: "Namespaces to consolidate (default: all)"},
+						},
 					},
-				},
-				{
-					Name:   "execute",
-					Usage:  "Start MCP server over stdio",
-					Action: mcpExecuteCmd,
-					Flags: []cli.Flag{
-						&cli.BoolFlag{Name: "with-consolidation", Usage: "Run consolidation in background alongside MCP server"},
-						&cli.DurationFlag{Name: "consolidate-interval", Value: 5 * time.Minute, Usage: "Consolidation interval"},
-						&cli.StringSliceFlag{Name: "consolidate-namespaces", Usage: "Namespaces to consolidate (default: all)"},
+					{
+						Name:   "execute",
+						Usage:  "Start MCP server over stdio",
+						Action: mcpExecuteCmd,
+						Flags: []cli.Flag{
+							&cli.BoolFlag{Name: "with-consolidation", Usage: "Run consolidation in background alongside MCP server"},
+							&cli.DurationFlag{Name: "consolidate-interval", Value: 5 * time.Minute, Usage: "Consolidation interval"},
+							&cli.StringSliceFlag{Name: "consolidate-namespaces", Usage: "Namespaces to consolidate (default: all)"},
+						},
 					},
-				},
 				},
 			},
 		},

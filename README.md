@@ -116,6 +116,24 @@ Stash is a cognitive layer between your AI agent and the world. Episodes become 
 
 A 9-stage consolidation pipeline turns raw observations into structured knowledge — facts, relationships, causal links, patterns, contradictions, goal tracking, failure patterns, and hypothesis verification. Each stage only processes new data since the last run.
 
+### Outcome-aware recall
+
+Self-hosted Stash can learn which recalled memories actually help without
+changing what it considers true. Set `STASH_RETRIEVAL_LEARNING_ENABLED=true`
+to record privacy-preserving recall impressions and enable bounded utility
+reranking. When enabled, recall responses include `impression_id`, `semantic_score`, and
+`utility_score`; agents can send an idempotent `helpful`, `harmful`, or
+`neutral` outcome with the `record_recall_feedback` MCP tool.
+
+Utility is deliberately separate from `facts.confidence`, validity,
+contradictions, and consolidation. Raw recall query text is not stored. The
+feature can be disabled without changing or migrating canonical memory.
+
+Embeddings and consolidation may also use separate OpenAI-compatible providers
+through `STASH_REASONER_API_KEY` and `STASH_REASONER_BASE_URL`. Bounded retries,
+explicit completion budgets, and a circuit breaker prevent exhausted providers
+from causing retry storms across namespaces.
+
 ## Stash Cloud (Beta — Free)
 
 A hosted, multi-tenant version of Stash is available at **[usestash.io](https://usestash.io/)** and is currently free while in beta.

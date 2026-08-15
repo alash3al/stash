@@ -22,11 +22,13 @@ SELECT
     namespace_id,
     content,
     confidence,
+    valid_from,
     created_at,
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
 FROM facts
 WHERE deleted_at IS NULL
     AND embedding IS NOT NULL
+    AND (valid_until IS NULL OR valid_until > now())
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}

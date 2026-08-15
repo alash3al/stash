@@ -13,8 +13,8 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 	rows, err := b.pool.Query(ctx,
 		`SELECT id, namespace_id, goal_id, content, reason, lesson, created_at, deleted_at
 		 FROM failures WHERE namespace_id = $1 AND deleted_at IS NULL AND id > $2
-		 ORDER BY id LIMIT 50`,
-		nsID, cp.LastFailureID,
+		 ORDER BY id LIMIT $3`,
+		nsID, cp.LastFailureID, b.consolidationBatchLimit(50),
 	)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch failures: %v", err))
@@ -44,7 +44,7 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 		return
 	}
 
-	epSQL, epArgs, err := b.queries.FetchEpisodes(nsID, cp.LastFailureEpisodeID, 30)
+	epSQL, epArgs, err := b.queries.FetchEpisodes(nsID, cp.LastFailureEpisodeID, b.consolidationBatchLimit(30))
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch episodes for failures: %v", err))
 		return
@@ -126,11 +126,13 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 		}
 	}
 
-	if maxFailureID > cp.LastFailureID {
-		cp.LastFailureID = maxFailureID
-	}
-	if maxEpisodeID > cp.LastFailureEpisodeID {
-		cp.LastFailureEpisodeID = maxEpisodeID
+	if len(errs) == 0 {
+		if maxFailureID > cp.LastFailureID {
+			cp.LastFailureID = maxFailureID
+		}
+		if maxEpisodeID > cp.LastFailureEpisodeID {
+			cp.LastFailureEpisodeID = maxEpisodeID
+		}
 	}
 
 	return
