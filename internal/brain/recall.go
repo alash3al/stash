@@ -30,6 +30,9 @@ type RecallResult struct {
 	CreatedAt           string  `json:"created_at"`
 	RetrievalMode       string  `json:"retrieval_mode,omitempty"`
 	ProviderRerankScore float32 `json:"provider_rerank_score,omitempty"`
+	// SupersessionDates lists valid_from timestamps for both sides of a subject
+	// conflict when a newer fact supersedes or contradicts an older one.
+	SupersessionDates []string `json:"supersession_dates,omitempty"`
 }
 
 // RecallOptions controls the additive learning ledger. Zero-value options keep
@@ -57,17 +60,21 @@ var (
 // Recall searches episodes and facts by semantic similarity across the given namespaces.
 // Each namespace path matches itself and all descendants. Namespaces is required.
 func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, limit int) ([]RecallResult, error) {
-	return b.RecallWithOptions(ctx, namespaces, query, limit, RecallOptions{
+	resp, err := b.RecallWithOptions(ctx, namespaces, query, limit, RecallOptions{
 		RecordOutcome: b.config.RetrievalLearningEnabled,
 		Caller:        "brain",
 	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Results, nil
 }
 
 // RecallWithOptions searches facts and episodes, optionally recording a
 // privacy-preserving impression and applying bounded utility reranking.
-func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions) ([]RecallResult, error) {
+func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions) (RecallResponse, error) {
 	if err := validateContent(query); err != nil {
-		return nil, err
+		return RecallResponse{}, err
 	}
 	if limit <= 0 {
 		limit = 10
@@ -78,12 +85,16 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaces)
 	if err != nil {
-		return nil, err
+		return RecallResponse{}, err
 	}
 
 	vec, err := b.embedder.Embed(ctx, query)
 	if err != nil {
-		return b.recallLexical(ctx, nsIDs, query, limit)
+		lexical, lerr := b.recallLexical(ctx, nsIDs, query, limit)
+		if lerr != nil {
+			return RecallResponse{}, lerr
+		}
+		return b.applyRecallTrust(ctx, lexical)
 	}
 
 	pgVec := pgvector.NewVector(vec)
@@ -106,12 +117,12 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 	factLimit := candidateLimit
 	factSQL, factArgs, err := b.queries.RecallFacts(nsIDs, pgVec, factLimit)
 	if err != nil {
-		return nil, fmt.Errorf("build fact query: %w", err)
+		return RecallResponse{}, fmt.Errorf("build fact query: %w", err)
 	}
 
 	factRows, err := b.pool.Query(ctx, factSQL, factArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("query facts: %w", err)
+		return RecallResponse{}, fmt.Errorf("query facts: %w", err)
 	}
 	defer factRows.Close()
 
@@ -126,7 +137,7 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 		var createdAt time.Time
 
 		if err := factRows.Scan(&id, &namespaceID, &content, &confidence, &validFrom, &createdAt, &score); err != nil {
-			return nil, fmt.Errorf("scan fact: %w", err)
+			return RecallResponse{}, fmt.Errorf("scan fact: %w", err)
 		}
 		results = append(results, RecallResult{
 			ID:            id,
@@ -144,7 +155,7 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 		}
 	}
 	if err := factRows.Err(); err != nil {
-		return nil, fmt.Errorf("fact rows: %w", err)
+		return RecallResponse{}, fmt.Errorf("fact rows: %w", err)
 	}
 
 	// Search episodes for remaining slots
@@ -155,12 +166,12 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 	if episodeLimit > 0 {
 		epSQL, epArgs, err := b.queries.RecallEpisodes(nsIDs, pgVec, episodeLimit)
 		if err != nil {
-			return nil, fmt.Errorf("build episode query: %w", err)
+			return RecallResponse{}, fmt.Errorf("build episode query: %w", err)
 		}
 
 		epRows, err := b.pool.Query(ctx, epSQL, epArgs...)
 		if err != nil {
-			return nil, fmt.Errorf("query episodes: %w", err)
+			return RecallResponse{}, fmt.Errorf("query episodes: %w", err)
 		}
 		defer epRows.Close()
 
@@ -173,7 +184,7 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 			var createdAt time.Time
 
 			if err := epRows.Scan(&id, &namespaceID, &content, &occurredAt, &createdAt, &score); err != nil {
-				return nil, fmt.Errorf("scan episode: %w", err)
+				return RecallResponse{}, fmt.Errorf("scan episode: %w", err)
 			}
 			results = append(results, RecallResult{
 				ID:            id,
@@ -188,7 +199,7 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 			})
 		}
 		if err := epRows.Err(); err != nil {
-			return nil, fmt.Errorf("episode rows: %w", err)
+			return RecallResponse{}, fmt.Errorf("episode rows: %w", err)
 		}
 	}
 
@@ -226,9 +237,16 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 
 	sortRecallResults(results)
 
+	trust, err := b.applyRecallTrust(ctx, results)
+	if err != nil {
+		return RecallResponse{}, err
+	}
+	results = trust.Results
+
 	if len(results) > limit {
 		results = results[:limit]
 	}
+	trust.Results = results
 
 	if learningEnabled && len(results) > 0 {
 		impressionID, err := b.recordRecallImpression(ctx, nsIDs, query, opts.Caller, results)
@@ -238,11 +256,12 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 			for i := range results {
 				results[i].ImpressionID = impressionID
 			}
+			trust.Results = results
 		}
 	}
 
 	observability.RecordRecall(len(results), learningEnabled)
-	return results, nil
+	return trust, nil
 }
 
 // recallLexical is the availability fallback for provider outages. It uses

@@ -281,6 +281,8 @@ NEVER SKIP WHEN:
 WHEN RECALL RETURNS EMPTY:
 - Do NOT silently answer from training data
 - Do NOT pretend you remember when Stash returned nothing
+- When `below_threshold` is true, treat it as "nothing known above the relevance floor" — not a weak hit
+- `score` is the final ranking signal (semantic cosine, optionally reranked); weak scores are dropped by default
 - Tell the user: "I don't have memory of this yet."
 - Answer as best you can, then call remember to store what you just learned
   so the next session won't be empty on this topic

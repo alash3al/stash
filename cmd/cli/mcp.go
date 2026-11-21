@@ -114,14 +114,14 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.RecallWithOptions(ctx, namespaces, query, limit, brain.RecallOptions{
+		resp, err := bc.Brain.RecallWithOptions(ctx, namespaces, query, limit, brain.RecallOptions{
 			RecordOutcome: learn,
 			Caller:        "mcp",
 		})
 		if err != nil {
 			return nil, err
 		}
-		b, _ := json.Marshal(results)
+		b, _ := json.Marshal(resp)
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 

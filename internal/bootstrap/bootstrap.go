@@ -100,6 +100,7 @@ func New(ctx context.Context) (*Context, error) {
 		RecallHistoryRetention:         cfg.RecallHistoryRetention,
 		EmbeddingBackfillBatch:         cfg.EmbeddingBackfillBatch,
 		ProviderRerankCandidateLimit:   cfg.ProviderRerankCandidateLimit,
+		RecallMinScore:                 cfg.RecallMinScore,
 		MaxRecordAttempts:              cfg.MaxRecordAttempts,
 		CycleReasonerCallCeiling:       cfg.CycleReasonerCallCeiling,
 	}

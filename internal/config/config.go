@@ -111,6 +111,11 @@ type Config struct {
 	ProviderRerankAPIKey         string `env:"STASH_DEEPINFRA_RERANK_API_KEY" envDefault:""`
 	ProviderRerankBaseURL        string `env:"STASH_DEEPINFRA_RERANK_BASE_URL" envDefault:"https://api.deepinfra.com"`
 	ProviderRerankCandidateLimit int    `env:"STASH_DEEPINFRA_RERANK_CANDIDATE_LIMIT" envDefault:"50"`
+
+	// RecallMinScore is the absolute floor on final recall Score. Results below
+	// it are omitted; an empty response sets below_threshold. See
+	// brain.DefaultRecallMinScore for how the default was chosen from evals/.
+	RecallMinScore float64 `env:"STASH_RECALL_MIN_SCORE" envDefault:"0.05"`
 }
 
 // ShadowEnabled reports whether a shadow embedding representation is configured.

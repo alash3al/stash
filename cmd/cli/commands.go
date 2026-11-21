@@ -56,7 +56,7 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	limit := cmd.Int("limit")
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.RecallWithOptions(ctx, namespaces, query, limit, brain.RecallOptions{
+	resp, err := bc.Brain.RecallWithOptions(ctx, namespaces, query, limit, brain.RecallOptions{
 		RecordOutcome: !cmd.Bool("no-learning"),
 		Caller:        "cli",
 	})
@@ -64,7 +64,7 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	return printJSON(results)
+	return printJSON(resp)
 }
 
 func forgetCmd(ctx context.Context, cmd *cli.Command) error {

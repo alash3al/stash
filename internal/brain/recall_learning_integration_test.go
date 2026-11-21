@@ -109,14 +109,14 @@ func TestRecallFeedbackLoopIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first) != 2 {
-		t.Fatalf("recall returned %d results, want 2 active facts: %+v", len(first), first)
+	if len(first.Results) != 2 {
+		t.Fatalf("recall returned %d results, want 2 active facts: %+v", len(first.Results), first)
 	}
-	if first[0].ID != canonicalID {
-		t.Fatalf("initial semantic leader = %d, want %d", first[0].ID, canonicalID)
+	if first.Results[0].ID != canonicalID {
+		t.Fatalf("initial semantic leader = %d, want %d", first.Results[0].ID, canonicalID)
 	}
 	var helpful brain.RecallResult
-	for _, result := range first {
+	for _, result := range first.Results {
 		if result.ID == helpfulID {
 			helpful = result
 		}
@@ -153,11 +153,11 @@ func TestRecallFeedbackLoopIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second[0].ID != helpfulID {
+	if second.Results[0].ID != helpfulID {
 		t.Fatalf("helpful result did not receive bounded promotion: %+v", second)
 	}
-	if second[0].Score-second[0].SemanticScore > 0.100001 {
-		t.Fatalf("utility promotion exceeded cap: %+v", second[0])
+	if second.Results[0].Score-second.Results[0].SemanticScore > 0.100001 {
+		t.Fatalf("utility promotion exceeded cap: %+v", second.Results[0])
 	}
 
 	var confidence float32

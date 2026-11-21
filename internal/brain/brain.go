@@ -68,6 +68,8 @@ type Config struct {
 	EmbeddingBackfillBatch         int
 	ProviderReranker               ProviderReranker
 	ProviderRerankCandidateLimit   int
+	// RecallMinScore drops results whose final Score is below this value (0 = off).
+	RecallMinScore float64
 
 	// MaxRecordAttempts bounds how many times one record may fail a stage for a
 	// permanent reason before the watermark is allowed past it. Zero uses
@@ -96,6 +98,7 @@ func DefaultConfig() Config {
 		RecallHistoryRetention:         90 * 24 * time.Hour,
 		EmbeddingBackfillBatch:         25,
 		ProviderRerankCandidateLimit:   50,
+		RecallMinScore:                 DefaultRecallMinScore,
 		MaxRecordAttempts:              DefaultMaxRecordAttempts,
 		CycleReasonerCallCeiling:       DefaultCycleReasonerCallCeiling,
 	}

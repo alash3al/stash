@@ -67,6 +67,13 @@ func TestShadowEnabledNeedsBothModelAndCredential(t *testing.T) {
 	}
 }
 
+func TestRecallMinScoreHasDefault(t *testing.T) {
+	field, ok := reflect.TypeOf(Config{}).FieldByName("RecallMinScore")
+	if !ok || !strings.Contains(string(field.Tag), "envDefault:") {
+		t.Fatal("RecallMinScore must ship with envDefault for safe boot")
+	}
+}
+
 func TestProviderRerankConfigIsOptionalAndNeedsModelAndCredential(t *testing.T) {
 	typ := reflect.TypeOf(Config{})
 	for _, name := range []string{"ProviderRerankModel", "ProviderRerankAPIKey", "ProviderRerankBaseURL", "ProviderRerankCandidateLimit"} {
