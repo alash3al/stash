@@ -68,35 +68,35 @@ type Contradiction struct {
 
 // FactSource links a fact to the episodes that support it.
 type FactSource struct {
-	FactID     int64 `db:"fact_id"`
-	EpisodeID  int64 `db:"episode_id"`
+	FactID    int64 `db:"fact_id"`
+	EpisodeID int64 `db:"episode_id"`
 }
 
 // Relationship is an extracted entity edge.
 type Relationship struct {
-	ID           int64     `db:"id"`
-	NamespaceID  int64     `db:"namespace_id"`
-	FromEntity   string    `db:"from_entity"`
-	RelationType string    `db:"relation_type"`
-	ToEntity     string    `db:"to_entity"`
-	Confidence   float32   `db:"confidence"`
-	SourceFactID *int64    `db:"source_fact_id"`
-	CreatedAt    time.Time `db:"created_at"`
+	ID           int64      `db:"id"`
+	NamespaceID  int64      `db:"namespace_id"`
+	FromEntity   string     `db:"from_entity"`
+	RelationType string     `db:"relation_type"`
+	ToEntity     string     `db:"to_entity"`
+	Confidence   float32    `db:"confidence"`
+	SourceFactID *int64     `db:"source_fact_id"`
+	CreatedAt    time.Time  `db:"created_at"`
 	DeletedAt    *time.Time `db:"deleted_at"`
 }
 
 // Pattern is an abstraction over facts and relationships.
 type Pattern struct {
-	ID             int64           `db:"id"`
-	NamespaceID    int64           `db:"namespace_id"`
-	Content        string          `db:"content"`
-	Confidence     float32         `db:"confidence"`
-	SourceFactIDs  []int64         `db:"source_fact_ids"`
-	SourceRelIDs   []int64         `db:"source_rel_ids"`
-	CoherenceScore float32         `db:"coherence_score"`
-	CreatedAt      time.Time       `db:"created_at"`
-	UpdatedAt      time.Time       `db:"updated_at"`
-	DeletedAt      *time.Time      `db:"deleted_at"`
+	ID             int64      `db:"id"`
+	NamespaceID    int64      `db:"namespace_id"`
+	Content        string     `db:"content"`
+	Confidence     float32    `db:"confidence"`
+	SourceFactIDs  []int64    `db:"source_fact_ids"`
+	SourceRelIDs   []int64    `db:"source_rel_ids"`
+	CoherenceScore float32    `db:"coherence_score"`
+	CreatedAt      time.Time  `db:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at"`
+	DeletedAt      *time.Time `db:"deleted_at"`
 }
 
 // Context is the active working state for a namespace.
@@ -170,19 +170,20 @@ type Failure struct {
 
 // ConsolidationProgress tracks per-stage checkpoint per namespace.
 type ConsolidationProgress struct {
-	NamespaceID          int64      `db:"namespace_id"`
-	LastEpisodeID        int64      `db:"last_episode_id"`
-	LastFactID           int64      `db:"last_fact_id"`
-	LastRelationshipID   int64      `db:"last_relationship_id"`
-	LastPatternFactID    int64      `db:"last_pattern_fact_id"`
-	LastPatternRelID     int64      `db:"last_pattern_rel_id"`
+	NamespaceID            int64      `db:"namespace_id"`
+	LastEpisodeID          int64      `db:"last_episode_id"`
+	LastFactID             int64      `db:"last_fact_id"`
+	LastRelationshipID     int64      `db:"last_relationship_id"`
+	LastPatternFactID      int64      `db:"last_pattern_fact_id"`
+	LastPatternRelID       int64      `db:"last_pattern_rel_id"`
 	LastGoalProgressFactID int64      `db:"last_goal_progress_fact_id"`
-	LastFailureID         int64      `db:"last_failure_id"`
-	LastFailureEpisodeID  int64      `db:"last_failure_episode_id"`
-	LastHypothesisFactID  int64      `db:"last_hypothesis_fact_id"`
-	LastDecayRun          *time.Time `db:"last_decay_run"`
-	LastRun               *time.Time `db:"last_run"`
-	UpdatedAt             time.Time  `db:"updated_at"`
+	LastFailureID          int64      `db:"last_failure_id"`
+	LastFailureEpisodeID   int64      `db:"last_failure_episode_id"`
+	LastHypothesisFactID   int64      `db:"last_hypothesis_fact_id"`
+	LastCausalFactID       int64      `db:"last_causal_fact_id"`
+	LastDecayRun           *time.Time `db:"last_decay_run"`
+	LastRun                *time.Time `db:"last_run"`
+	UpdatedAt              time.Time  `db:"updated_at"`
 }
 
 // Setting is a key-value store for operational state.

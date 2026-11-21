@@ -42,9 +42,9 @@ func TestForgetResultRowsAffected(t *testing.T) {
 // TestForgetEpisodeExpiresSingleSourceFact documents TS-816: forgetting an episode must
 // soft-delete consolidated facts that only cited that episode.
 func TestForgetEpisodeExpiresSingleSourceFact(t *testing.T) {
-	dsn := os.Getenv("STASH_TEST_DSN")
+	dsn := os.Getenv("STASH_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("STASH_TEST_DSN not set (postgres with pgvector required)")
+		t.Skip("STASH_TEST_POSTGRES_DSN is not set")
 	}
 
 	ctx := context.Background()
@@ -163,9 +163,9 @@ func TestForgetEpisodeExpiresSingleSourceFact(t *testing.T) {
 }
 
 func TestForgetFactByID(t *testing.T) {
-	dsn := os.Getenv("STASH_TEST_DSN")
+	dsn := os.Getenv("STASH_TEST_POSTGRES_DSN")
 	if dsn == "" {
-		t.Skip("STASH_TEST_DSN not set")
+		t.Skip("STASH_TEST_POSTGRES_DSN is not set")
 	}
 
 	ctx := context.Background()

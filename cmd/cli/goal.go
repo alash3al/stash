@@ -77,8 +77,8 @@ func goalShowCmd(ctx context.Context, cmd *cli.Command) error {
 	total, completed, _ := bc.Brain.GetGoalProgress(ctx, id)
 
 	return printJSON(map[string]any{
-		"goal":       g,
-		"sub_goals":  map[string]int{"total": total, "completed": completed},
+		"goal":      g,
+		"sub_goals": map[string]int{"total": total, "completed": completed},
 	})
 }
 

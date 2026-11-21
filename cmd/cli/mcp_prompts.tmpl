@@ -310,6 +310,30 @@ What to search for. Natural language, 2-6 words describing the topic.
 Good: 'user authentication preference'. Bad: 'auth' or 'stuff'.
 {{end}}
 
+{{define "recall_learn"}}
+When true, request a privacy-preserving recall impression and apply bounded learned utility. The server must also have STASH_RETRIEVAL_LEARNING_ENABLED=true; otherwise recall remains semantic-only and returns no impression_id. Raw query text is not stored. Set false for sensitive one-off reads or an exact semantic-only comparison.
+{{end}}
+
+{{define "record_recall_feedback_description"}}
+Records whether one memory returned by recall helped the task. This updates retrieval utility only; it never changes fact confidence, validity, contradictions, or canonical truth.
+
+CALL THIS WHEN:
+- A recalled memory materially helped complete or unblock the task: signal "helpful"
+- A recalled memory was misleading, stale in context, or caused a wrong action: signal "harmful"
+- The memory was inspected but had no meaningful effect: signal "neutral"
+
+Use the impression_id, type, and id from the recall result. The idempotency_key must be stable across retries, for example "task-id:impression-id:type:id:signal". Repeating the same key is safe and does not double-count.
+
+DO NOT use feedback to assert truth. Correct or supersede canonical facts through the appropriate memory workflow; feedback controls ranking utility only.
+{{end}}
+
+{{define "record_recall_feedback_impression_id"}}The impression_id returned with the recall result.{{end}}
+{{define "record_recall_feedback_memory_type"}}The result type: "fact" or "episode".{{end}}
+{{define "record_recall_feedback_memory_id"}}The result id returned by recall.{{end}}
+{{define "record_recall_feedback_signal"}}One of "helpful", "harmful", or "neutral".{{end}}
+{{define "record_recall_feedback_idempotency_key"}}A caller-generated stable key that is reused if the feedback request is retried.{{end}}
+{{define "record_recall_feedback_reason"}}Optional concise explanation, maximum 1000 characters. Do not include secrets.{{end}}
+
 {{define "recall_namespaces"}}
 Comma-separated namespace paths to search. Each path matches itself and all descendants.
 /users/alice → alice and all sub-namespaces.

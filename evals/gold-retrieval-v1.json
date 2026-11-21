@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "name": "stash-gold-retrieval-v1",
+  "created": "2026-08-15",
+  "notes": "Known-item retrieval cases for comparing embedding models. Queries are deliberately PARAPHRASED rather than copied from the fact text: a query that reuses a fact's distinctive wording rewards lexical overlap and would flatter any model, defeating the purpose. relevant_fact_ids is a SET because the corpus contains many near-duplicate consolidated facts — one question is answered correctly by any of them, and demanding a specific row would measure duplicate-lottery luck instead of retrieval quality. Only namespaces that are fully shadow-migrated can be scored on both columns; as of 2026-08-15 that is /projects/tolowa-studio, /tools/baton and /system/healthcheck. Run `stash eval validate` before trusting any score.",
+  "cases": [
+    {
+      "id": "retrieval-ignores-model-column",
+      "query": "Does searching memory take into account which model produced a stored vector?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [9862],
+      "expect": "embedding_model",
+      "note": "The answer is no — which is why a mixed-model corpus degrades silently."
+    },
+    {
+      "id": "consolidation-stuck-watermark",
+      "query": "Why would the same record be sent to the paid reasoner over and over without ever succeeding?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [9860],
+      "expect": "LastFactID"
+    },
+    {
+      "id": "gateway-left-workers-ai",
+      "query": "What did we move the model gateway onto after dropping Cloudflare's inference?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [9769],
+      "expect": "ClinePass"
+    },
+    {
+      "id": "crm-enrichment-view-built-by-api",
+      "query": "How was the CRM view for records still needing enrichment created?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [9273],
+      "expect": "Needs Enrichment"
+    },
+    {
+      "id": "crm-enrichment-auditability",
+      "query": "Can someone looking at the CRM see when and how a company record was enriched?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [9269],
+      "expect": "enrichment"
+    },
+    {
+      "id": "enrichment-status-not-trustworthy",
+      "query": "Which CRM field turned out to be unreliable as a signal that enrichment had finished?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [9265],
+      "expect": "Enrichment Status"
+    },
+    {
+      "id": "crm-email-outage-root-cause",
+      "query": "What actually caused the customer relationship system to stop sending mail on our host?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8909],
+      "expect": "worker"
+    },
+    {
+      "id": "crm-version-and-hosting",
+      "query": "Which release of our self-hosted sales database are we running and where does it live?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8903],
+      "expect": "2.24.1"
+    },
+    {
+      "id": "skills-registry-cleanup",
+      "query": "What tidy-up produced new rows in the skills registry database?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8625],
+      "expect": "Skills"
+    },
+    {
+      "id": "kochel-upgrades-shipped",
+      "query": "Which specification framework was deliberately left out when the five-step upgrades shipped?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8620],
+      "expect": "OpenSpec"
+    },
+    {
+      "id": "kochel-video-assessment",
+      "query": "How much of the build-with-AI-from-scratch approach did we already do under different names?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8619],
+      "expect": "baton-1kpzeu5"
+    },
+    {
+      "id": "marketing-site-deploy-command",
+      "query": "What is the correct way to push the main marketing website to production?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8615],
+      "expect": "cf:deploy"
+    },
+    {
+      "id": "visibility-page-live",
+      "query": "Was the new page about seeing your business clearly confirmed serving traffic?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8608, 8601],
+      "expect": "visibility"
+    },
+    {
+      "id": "visibility-page-signoff",
+      "query": "Which commit carried the approved page, and was an email drafted alongside it?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8596],
+      "expect": "1603b03"
+    },
+    {
+      "id": "scott-contact-addresses",
+      "query": "Which mailboxes do we use to reach Scott at the hub company?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8595],
+      "expect": "swartzbaugh"
+    },
+    {
+      "id": "smaller-company-pitch-shape",
+      "query": "What makes the pitch land with smaller and mid-sized companies?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8588],
+      "expect": "weekly"
+    },
+    {
+      "id": "what-business-are-we-in",
+      "query": "What do we actually sell, and which engagement size do we push first?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8587],
+      "expect": "VISIBILITY"
+    },
+    {
+      "id": "karpathy-principles-adopted",
+      "query": "Which coding principles from a well-known AI researcher did we decide to take on?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8530],
+      "expect": "arpathy"
+    },
+    {
+      "id": "public-design-skills-review",
+      "query": "What came out of reviewing publicly available frontend and design skills for our pitch work?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8529],
+      "expect": "4b793b"
+    },
+    {
+      "id": "bagel-shop-rebuild",
+      "query": "Which experimental approach was used to rebuild the bakery concept site?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8520],
+      "expect": "Northside"
+    },
+    {
+      "id": "mail-agent-permissions",
+      "query": "What mailbox permission scope does the automated mail handler need?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8519],
+      "expect": "Mail.ReadWrite"
+    },
+    {
+      "id": "public-technology-pages",
+      "query": "What did we publish publicly about our own tooling?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8514],
+      "expect": "BATON"
+    },
+    {
+      "id": "paywalled-skill-rejected",
+      "query": "Why did we decline to adopt the skill that sat behind a paid community, and what did we keep from it?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8482, 8483, 8491, 8493, 8499, 8507, 8508, 8511],
+      "expect": "Skool",
+      "note": "Eight near-identical consolidated facts describe this one decision. A model finding ANY of them has answered correctly — this case exists partly to demonstrate why relevant_fact_ids must be a set."
+    },
+    {
+      "id": "notion-workspace-restructure",
+      "query": "How was the knowledge workspace reorganised at the top level?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8478],
+      "expect": "control center"
+    },
+    {
+      "id": "window-cleaning-client-status",
+      "query": "How is the window cleaning company classified in our client records?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8474],
+      "expect": "Brookings"
+    },
+    {
+      "id": "bulk-move-side-effects",
+      "query": "Did moving pages in bulk break their links, and did anything land in the wrong place?",
+      "namespace": "/projects/tolowa-studio",
+      "relevant_fact_ids": [8473],
+      "expect": "bulk move"
+    },
+    {
+      "id": "how-lane-refusals-are-detected",
+      "query": "How does the dispatcher notice when a worker admits it cannot do something?",
+      "namespace": "/tools/baton",
+      "relevant_fact_ids": [8023, 8123],
+      "expect": "detectRefusal"
+    },
+    {
+      "id": "free-lane-is-unproven",
+      "query": "Which of the routing lanes costs nothing to run, and how much evidence do we have that it works?",
+      "namespace": "/tools/baton",
+      "relevant_fact_ids": [8079, 8108, 8112, 8136],
+      "expect": "smoke test"
+    },
+    {
+      "id": "capability-enforced-only-by-prose",
+      "query": "Which capability was enforced merely by wording in a prompt instead of structurally?",
+      "namespace": "/tools/baton",
+      "relevant_fact_ids": [8150, 8172],
+      "expect": "web"
+    },
+    {
+      "id": "how-work-gets-routed-off-claude",
+      "query": "What mechanism moves substantial work to other tools rather than relying on the assistant to remember to?",
+      "namespace": "/tools/baton",
+      "relevant_fact_ids": [9806],
+      "expect": "UserPromptSubmit"
+    }
+  ]
+}
