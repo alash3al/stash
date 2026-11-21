@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrGoalNotFound = fmt.Errorf("brain: goal not found")
+	ErrGoalNotFound  = fmt.Errorf("brain: goal not found")
 	ErrGoalNotActive = fmt.Errorf("brain: goal is not active")
 )
 
