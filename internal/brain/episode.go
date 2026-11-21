@@ -47,57 +47,6 @@ func (b *Brain) Remember(ctx context.Context, namespaceSlug, content string, occ
 	return id, nil
 }
 
-// ForgetEpisode soft-deletes the episode that best matches the query across the given namespaces.
-// If namespaceSlugs is empty, searches all namespaces.
-func (b *Brain) ForgetEpisode(ctx context.Context, namespaceSlugs []string, query string) error {
-	if err := validateContent(query); err != nil {
-		return err
-	}
-	for _, slug := range namespaceSlugs {
-		if err := validatePath(slug); err != nil {
-			return err
-		}
-	}
-
-	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
-	if err != nil {
-		return err
-	}
-
-	vec, err := b.embedder.Embed(ctx, query)
-	if err != nil {
-		return fmt.Errorf("embed: %w", err)
-	}
-
-	var id int64
-	if len(nsIDs) == 1 {
-		err = b.pool.QueryRow(ctx,
-			`SELECT id FROM episodes
-			 WHERE namespace_id = $1 AND deleted_at IS NULL AND embedding IS NOT NULL
-			 ORDER BY embedding <=> $2 LIMIT 1`,
-			nsIDs[0], pgvector.NewVector(vec),
-		).Scan(&id)
-	} else {
-		err = b.pool.QueryRow(ctx,
-			`SELECT id FROM episodes
-			 WHERE namespace_id = ANY($1) AND deleted_at IS NULL AND embedding IS NOT NULL
-			 ORDER BY embedding <=> $2 LIMIT 1`,
-			nsIDs, pgvector.NewVector(vec),
-		).Scan(&id)
-	}
-	if err != nil {
-		return ErrEpisodeNotFound
-	}
-
-	_, err = b.pool.Exec(ctx,
-		"UPDATE episodes SET deleted_at = now() WHERE id = $1", id,
-	)
-	if err != nil {
-		return fmt.Errorf("soft delete episode: %w", err)
-	}
-	return nil
-}
-
 // PurgeEpisode hard-deletes an episode by ID.
 func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64) error {
 	tag, err := b.pool.Exec(ctx, "DELETE FROM episodes WHERE id = $1", episodeID)

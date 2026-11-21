@@ -121,11 +121,21 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 
 	mcpServer.AddTool(mcp.NewTool("forget",
 		mcp.WithDescription(render("forget_description")),
-		mcp.WithString("about", mcp.Description(render("forget_about")), mcp.Required()),
+		mcp.WithString("about", mcp.Description(render("forget_about"))),
+		mcp.WithNumber("id", mcp.Description(render("forget_id_param"))),
+		mcp.WithString("ids", mcp.Description(render("forget_ids_param"))),
+		mcp.WithString("type", mcp.Description(render("forget_type_param"))),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		about := request.GetString("about", "")
 		nsRaw := request.GetString("namespaces", "/")
+		targetType := brain.ForgetTarget(request.GetString("type", ""))
+		id := int64(request.GetInt("id", 0))
+
+		ids, err := brain.ParseForgetIDs(request.GetString("ids", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var namespaces []string
 		for _, ns := range strings.Split(nsRaw, ",") {
@@ -134,10 +144,17 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		if err := bc.Brain.ForgetEpisode(ctx, namespaces, about); err != nil {
+		result, err := bc.Brain.Forget(ctx, namespaces, brain.ForgetInput{
+			About:      about,
+			TargetType: targetType,
+			ID:         id,
+			IDs:        ids,
+		})
+		if err != nil {
 			return nil, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: `{"ok": true}`}}}, nil
+		b, _ := json.Marshal(result)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
 	mcpServer.AddTool(mcp.NewTool("consolidate",

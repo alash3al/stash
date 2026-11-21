@@ -17,6 +17,7 @@ var (
 	ErrNamespaceNotFound = fmt.Errorf("brain: namespace not found — call create_namespace first")
 	ErrEpisodeNotFound   = fmt.Errorf("brain: episode not found")
 	ErrFactNotFound      = fmt.Errorf("brain: fact not found")
+	ErrMemoryNotFound    = fmt.Errorf("brain: matching episode or fact not found")
 	ErrEmptyContent      = fmt.Errorf("brain: content cannot be empty")
 	ErrContentTooLong    = fmt.Errorf("brain: content exceeds maximum length")
 	ErrInvalidPath = fmt.Errorf("brain: namespace path must start with / and contain valid segments (lowercase alphanumeric, hyphens, underscores)")

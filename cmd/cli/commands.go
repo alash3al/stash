@@ -76,11 +76,12 @@ func forgetCmd(ctx context.Context, cmd *cli.Command) error {
 
 	namespaces := cmd.StringSlice("namespaces")
 	bc := getBootstrap(cmd)
-	if err := bc.Brain.ForgetEpisode(ctx, namespaces, query); err != nil {
+	result, err := bc.Brain.ForgetEpisode(ctx, namespaces, query)
+	if err != nil {
 		return err
 	}
 
-	return printJSON(map[string]string{"message": "Memory forgotten successfully"})
+	return printJSON(result)
 }
 
 func purgeEpisodeCmd(ctx context.Context, cmd *cli.Command) error {

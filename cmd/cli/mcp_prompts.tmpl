@@ -352,6 +352,19 @@ COST OF NOT CALLING: You give advice based on facts the user explicitly correcte
 What to forget. Must closely match the stored content — call recall first to find the exact wording.
 Good: 'User preferred gRPC over REST for the API layer.' (matches stored text)
 Bad: 'grpc stuff' or 'the database thing'.
+Omit when using id/ids with type (after recall returned id and type).
+{{end}}
+
+{{define "forget_id_param"}}
+Single episode or fact id from recall. Requires type (episode or fact). Omit about when set.
+{{end}}
+
+{{define "forget_ids_param"}}
+Comma-separated episode or fact ids for batch forget. Requires type (episode or fact).
+{{end}}
+
+{{define "forget_type_param"}}
+Required with id or ids: episode (raw memory) or fact (consolidated memory).
 {{end}}
 
 
