@@ -48,8 +48,8 @@ func TestForgetEpisodeExpiresSingleSourceFact(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	const vectorDim = 8
-	pool, err := db.Open(ctx, dsn, "fake/test", vectorDim)
+	const vectorDim = 3 // must match recall_learning_integration_test (shared CI Postgres)
+	pool, err := db.Open(ctx, dsn, "test-embedding", vectorDim)
 	if err != nil {
 		t.Fatalf("db open: %v", err)
 	}
@@ -169,8 +169,8 @@ func TestForgetFactByID(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	const vectorDim = 8
-	pool, err := db.Open(ctx, dsn, "fake/test", vectorDim)
+	const vectorDim = 3 // must match recall_learning_integration_test (shared CI Postgres)
+	pool, err := db.Open(ctx, dsn, "test-embedding", vectorDim)
 	if err != nil {
 		t.Fatalf("db open: %v", err)
 	}
