@@ -51,4 +51,4 @@ USER nonroot:nonroot
 
 # Default command - show help
 ENTRYPOINT ["/stash"]
-CMD ["--help"]
+CMD ["serve"]

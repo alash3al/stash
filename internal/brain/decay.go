@@ -7,8 +7,8 @@ import (
 
 // DecayResult describes the outcome of a confidence decay run.
 type DecayResult struct {
-	FactsDecayed  int `json:"facts_decayed"`
-	FactsExpired  int `json:"facts_expired"`
+	FactsDecayed int `json:"facts_decayed"`
+	FactsExpired int `json:"facts_expired"`
 }
 
 // DecayConfidence reduces confidence of facts not re-observed within the configured window.

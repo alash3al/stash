@@ -17,8 +17,8 @@ var (
 )
 
 var validTransitions = map[string][]string{
-	"proposed": {"testing", "rejected"},
-	"testing":  {"confirmed", "rejected", "proposed"},
+	"proposed":  {"testing", "rejected"},
+	"testing":   {"confirmed", "rejected", "proposed"},
 	"confirmed": {},
 	"rejected":  {},
 }

@@ -11,6 +11,14 @@ FROM episodes
 WHERE namespace_id = {{.Bind .Args.namespace_id}}
     AND deleted_at IS NULL
     AND id > {{.Bind .Args.after_id}}
+    AND embedding IS NOT NULL
+    AND id < COALESCE((
+        SELECT MIN(blocked.id) FROM episodes blocked
+        WHERE blocked.namespace_id = {{.Bind .Args.namespace_id}}
+          AND blocked.deleted_at IS NULL
+          AND blocked.id > {{.Bind .Args.after_id}}
+          AND blocked.embedding IS NULL
+    ), 9223372036854775807)
 ORDER BY id
 LIMIT {{.Bind .Args.limit}}
 {{end}}
@@ -34,6 +42,14 @@ FROM facts
 WHERE namespace_id = {{.Bind .Args.namespace_id}}
     AND deleted_at IS NULL
     AND id > {{.Bind .Args.after_id}}
+    AND embedding IS NOT NULL
+    AND id < COALESCE((
+        SELECT MIN(blocked.id) FROM facts blocked
+        WHERE blocked.namespace_id = {{.Bind .Args.namespace_id}}
+          AND blocked.deleted_at IS NULL
+          AND blocked.id > {{.Bind .Args.after_id}}
+          AND blocked.embedding IS NULL
+    ), 9223372036854775807)
 ORDER BY id
 LIMIT {{.Bind .Args.limit}}
 {{end}}

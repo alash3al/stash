@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -99,10 +100,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("query", mcp.Description(render("recall_query")), mcp.Required()),
 		mcp.WithString("namespaces", mcp.Description(render("recall_namespaces"))),
 		mcp.WithNumber("limit", mcp.Description(render("limit_param")), mcp.DefaultNumber(10)),
+		mcp.WithBoolean("learn", mcp.Description(render("recall_learn")), mcp.DefaultBool(true)),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		nsRaw := request.GetString("namespaces", "/")
 		limit := request.GetInt("limit", 10)
+		learn := request.GetBool("learn", true)
 
 		var namespaces []string
 		for _, ns := range strings.Split(nsRaw, ",") {
@@ -111,7 +114,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.Recall(ctx, namespaces, query, limit)
+		results, err := bc.Brain.RecallWithOptions(ctx, namespaces, query, limit, brain.RecallOptions{
+			RecordOutcome: learn,
+			Caller:        "mcp",
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -119,13 +125,48 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("record_recall_feedback",
+		mcp.WithDescription(render("record_recall_feedback_description")),
+		mcp.WithNumber("impression_id", mcp.Description(render("record_recall_feedback_impression_id")), mcp.Required()),
+		mcp.WithString("memory_type", mcp.Description(render("record_recall_feedback_memory_type")), mcp.Required()),
+		mcp.WithNumber("memory_id", mcp.Description(render("record_recall_feedback_memory_id")), mcp.Required()),
+		mcp.WithString("signal", mcp.Description(render("record_recall_feedback_signal")), mcp.Required()),
+		mcp.WithString("idempotency_key", mcp.Description(render("record_recall_feedback_idempotency_key")), mcp.Required()),
+		mcp.WithString("reason", mcp.Description(render("record_recall_feedback_reason"))),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		result, err := bc.Brain.RecordRecallFeedback(
+			ctx,
+			int64(request.GetInt("impression_id", 0)),
+			request.GetString("memory_type", ""),
+			int64(request.GetInt("memory_id", 0)),
+			request.GetString("signal", ""),
+			request.GetString("idempotency_key", ""),
+			request.GetString("reason", ""),
+		)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(result)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("forget",
 		mcp.WithDescription(render("forget_description")),
-		mcp.WithString("about", mcp.Description(render("forget_about")), mcp.Required()),
+		mcp.WithString("about", mcp.Description(render("forget_about"))),
+		mcp.WithNumber("id", mcp.Description(render("forget_id_param"))),
+		mcp.WithString("ids", mcp.Description(render("forget_ids_param"))),
+		mcp.WithString("type", mcp.Description(render("forget_type_param"))),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		about := request.GetString("about", "")
 		nsRaw := request.GetString("namespaces", "/")
+		targetType := brain.ForgetTarget(request.GetString("type", ""))
+		id := int64(request.GetInt("id", 0))
+
+		ids, err := brain.ParseForgetIDs(request.GetString("ids", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var namespaces []string
 		for _, ns := range strings.Split(nsRaw, ",") {
@@ -134,10 +175,17 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		if err := bc.Brain.ForgetEpisode(ctx, namespaces, about); err != nil {
+		result, err := bc.Brain.Forget(ctx, namespaces, brain.ForgetInput{
+			About:      about,
+			TargetType: targetType,
+			ID:         id,
+			IDs:        ids,
+		})
+		if err != nil {
 			return nil, err
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: `{"ok": true}`}}}, nil
+		b, _ := json.Marshal(result)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
 	mcpServer.AddTool(mcp.NewTool("consolidate",
@@ -736,6 +784,10 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
 	mcpServer := newMCPServer(bc)
 	sseServer := server.NewSSEServer(mcpServer)
+	// Modern Streamable HTTP transport (MCP spec >= 2025-03-26), served at /mcp
+	// ALONGSIDE the legacy SSE transport. Stateless keeps each request
+	// self-contained, which is simplest and most robust behind a reverse proxy.
+	streamableServer := server.NewStreamableHTTPServer(mcpServer, server.WithStateLess(true))
 
 	host := cmd.String("host")
 	port := cmd.String("port")
@@ -754,16 +806,51 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 		}()
 	}
 
-	fmt.Printf("Starting MCP SSE server on %s\n", addr)
+	// One listener, both transports. Mounting the whole SSEServer at "/" keeps
+	// /sse and /message byte-for-byte identical to the previous behavior
+	// (SSEServer.Start also used the SSEServer as the sole HTTP handler); "/mcp"
+	// is the only added route.
+	//
+	// /healthz is ALSO added here (mirroring server.go's real bc.Brain.Health
+	// check, not a bare process-up ping) because deploy platforms like Railway
+	// health-check a service's primary/detected port — which is this one
+	// (mcp-port), not the separate metrics port (http-port) serveHTTP() listens
+	// on. Without this, an external healthcheck aimed at this port 404s
+	// regardless of whether the database is actually reachable.
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", streamableServer)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := bc.Brain.Health(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if err := bc.Brain.Ready(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready"))
+	})
+	mux.Handle("/", sseServer)
+	httpServer := &http.Server{Addr: addr, Handler: mux}
+
+	fmt.Printf("Starting MCP server (SSE at /sse, Streamable HTTP at /mcp) on %s\n", addr)
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- sseServer.Start(addr)
+		errCh <- httpServer.ListenAndServe()
 	}()
 
 	select {
 	case <-ctx.Done():
-		fmt.Println("\nMCP SSE server shutting down")
+		fmt.Println("\nMCP server shutting down")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = httpServer.Shutdown(shutdownCtx)
 		wg.Wait()
 		return nil
 	case err := <-errCh:
@@ -810,6 +897,11 @@ func runConsolidationTicker(ctx context.Context, bc *bootstrap.Context, cmd *cli
 	for {
 		select {
 		case <-ticker.C:
+			if updated, err := bc.Brain.BackfillMissingEmbeddings(ctx); err != nil {
+				log.Printf("Embedding backfill deferred: %v", err)
+			} else if updated > 0 {
+				log.Printf("Embedding backfill updated %d memories", updated)
+			}
 			ids, err := bc.Brain.ResolveNamespaceIDs(ctx, namespaces)
 			if err != nil {
 				log.Printf("Consolidation: failed to resolve namespaces: %v", err)
@@ -823,6 +915,11 @@ func runConsolidationTicker(ctx context.Context, bc *bootstrap.Context, cmd *cli
 				}
 				log.Printf("Consolidation completed for %s: facts=%d relationships=%d goals_annotated=%d failure_repeats=%d hypotheses_updated=%d",
 					result.Namespace, result.FactsCreated, result.RelationshipsFound, result.GoalsAnnotated, result.FailureRepeatsDetected, result.HypothesesUpdated)
+			}
+			if deleted, err := bc.Brain.PruneRecallHistory(ctx); err != nil {
+				log.Printf("Recall history pruning failed: %v", err)
+			} else if deleted > 0 {
+				log.Printf("Recall history pruning removed %d expired impressions", deleted)
 			}
 		case <-ctx.Done():
 			log.Printf("Background consolidation shutting down")

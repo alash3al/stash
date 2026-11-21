@@ -21,7 +21,8 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 
 	query := `SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
-	          FROM facts WHERE namespace_id = ANY($1) AND deleted_at IS NULL`
+	          FROM facts WHERE namespace_id = ANY($1) AND deleted_at IS NULL
+	          AND (valid_until IS NULL OR valid_until > now())`
 	args := []any{nsIDs}
 	argN := 1
 

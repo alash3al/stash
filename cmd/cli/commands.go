@@ -56,7 +56,10 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	limit := cmd.Int("limit")
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.Recall(ctx, namespaces, query, limit)
+	results, err := bc.Brain.RecallWithOptions(ctx, namespaces, query, limit, brain.RecallOptions{
+		RecordOutcome: !cmd.Bool("no-learning"),
+		Caller:        "cli",
+	})
 	if err != nil {
 		return err
 	}
@@ -76,11 +79,12 @@ func forgetCmd(ctx context.Context, cmd *cli.Command) error {
 
 	namespaces := cmd.StringSlice("namespaces")
 	bc := getBootstrap(cmd)
-	if err := bc.Brain.ForgetEpisode(ctx, namespaces, query); err != nil {
+	result, err := bc.Brain.ForgetEpisode(ctx, namespaces, query)
+	if err != nil {
 		return err
 	}
 
-	return printJSON(map[string]string{"message": "Memory forgotten successfully"})
+	return printJSON(result)
 }
 
 func purgeEpisodeCmd(ctx context.Context, cmd *cli.Command) error {
