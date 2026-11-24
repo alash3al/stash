@@ -99,8 +99,12 @@ func TestRecallFeedbackLoopIntegration(t *testing.T) {
 		return id
 	}
 
-	canonicalID := insertFact("canonical semantic leader", []float32{1, 0, 0}, 0.95, nil)
-	helpfulID := insertFact("nearly equal but task helpful", []float32{0.9998, 0.02, 0}, 0.30, nil)
+	// The two candidates sit on opposite sides of the query (-15deg / +16deg), so
+	// their semantic scores are nearly equal (0.9659 vs 0.9613) but they are
+	// ~31deg apart from each other (cosine ~0.86 < the 0.92 dedupe threshold).
+	// Near-identical vectors would be collapsed as paraphrases by recall trust.
+	canonicalID := insertFact("canonical semantic leader", []float32{0.9659258, -0.2588190, 0}, 0.95, nil)
+	helpfulID := insertFact("nearly equal but task helpful", []float32{0.9612617, 0.2756374, 0}, 0.30, nil)
 	expired := now.Add(-time.Hour)
 	_ = insertFact("expired fact must never leak", []float32{1, 0, 0}, 1.0, &expired)
 
