@@ -20,3 +20,17 @@ type Embedder interface {
 	// Dims returns the vector dimensions, e.g. 1536, 768.
 	Dims() int
 }
+
+// AvailabilityReporter is implemented by embedders that can report an open
+// provider circuit without issuing another metered request.
+type AvailabilityReporter interface {
+	Availability() error
+}
+
+// Availability returns the provider state when the embedder exposes it.
+func Availability(e Embedder) error {
+	if reporter, ok := e.(AvailabilityReporter); ok {
+		return reporter.Availability()
+	}
+	return nil
+}

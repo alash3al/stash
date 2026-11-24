@@ -88,6 +88,24 @@ func (c *Cached) Dims() int {
 	return c.embedder.Dims()
 }
 
+// QueryText forwards the wrapped embedder's asymmetric query transform.
+//
+// Forwarding matters: without it the type assertion in QueryTextFor fails on
+// the cache wrapper and every query is silently embedded as a document — a
+// regression that produces slightly worse results and no error at all.
+//
+// The cache needs no other change. Embed keys on the transformed text, so a
+// query vector and a document vector for the same words land under different
+// keys and can never be served for one another.
+func (c *Cached) QueryText(query string) string {
+	return QueryTextFor(c.embedder, query)
+}
+
+// Availability delegates provider circuit state through the cache wrapper.
+func (c *Cached) Availability() error {
+	return Availability(c.embedder)
+}
+
 func (c *Cached) getCached(ctx context.Context, hash, model string) ([]float32, error) {
 	var vec pgvector.Vector
 	err := c.pool.QueryRow(ctx,

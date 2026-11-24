@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
 	"github.com/alash3al/stash/internal/models"
@@ -28,11 +30,51 @@ Rules:
 const retryWarning = "Your previous response was invalid or contained invented information. Follow the rules strictly. Output ONLY valid JSON matching the provided schema."
 
 type OpenAI struct {
-	client openai.Client
-	model  string
+	client              openai.Client
+	model               string
+	maxTokens           int64
+	rateLimitCooldown   time.Duration
+	paymentCooldown     time.Duration
+	serverErrorCooldown time.Duration
+	now                 func() time.Time
+	circuitMu           sync.Mutex
+	circuitUntil        time.Time
+	circuitStatus       int
+}
+
+// OpenAIConfig controls bounded provider retries and the process-local circuit
+// breaker. The SDK already honors Retry-After and retries 429/5xx responses;
+// the circuit prevents every remaining consolidation stage and namespace from
+// immediately repeating an exhausted request budget.
+type OpenAIConfig struct {
+	MaxTokens           int64
+	MaxRetries          int
+	RateLimitCooldown   time.Duration
+	PaymentCooldown     time.Duration
+	ServerErrorCooldown time.Duration
+}
+
+// UnavailableError is returned while the provider circuit is open.
+type UnavailableError struct {
+	StatusCode int
+	RetryAt    time.Time
+}
+
+func (e *UnavailableError) Error() string {
+	return fmt.Sprintf("reasoner provider unavailable (status %d) until %s", e.StatusCode, e.RetryAt.UTC().Format(time.RFC3339))
+}
+
+// IsUnavailable reports whether an error means the reasoner circuit is open.
+func IsUnavailable(err error) bool {
+	var unavailable *UnavailableError
+	return errors.As(err, &unavailable)
 }
 
 func NewOpenAI(baseURL, apiKey, model string) (*OpenAI, error) {
+	return NewOpenAIWithConfig(baseURL, apiKey, model, OpenAIConfig{})
+}
+
+func NewOpenAIWithConfig(baseURL, apiKey, model string, cfg OpenAIConfig) (*OpenAI, error) {
 	if apiKey == "" {
 		return nil, errors.New("reasoner: apiKey is required")
 	}
@@ -40,15 +82,91 @@ func NewOpenAI(baseURL, apiKey, model string) (*OpenAI, error) {
 		return nil, errors.New("reasoner: model is required")
 	}
 
+	if cfg.MaxTokens <= 0 {
+		cfg.MaxTokens = 4096
+	}
+	if cfg.MaxRetries < 0 {
+		return nil, errors.New("reasoner: max retries cannot be negative")
+	}
+	if cfg.RateLimitCooldown <= 0 {
+		cfg.RateLimitCooldown = 5 * time.Minute
+	}
+	if cfg.PaymentCooldown <= 0 {
+		cfg.PaymentCooldown = time.Hour
+	}
+	if cfg.ServerErrorCooldown <= 0 {
+		cfg.ServerErrorCooldown = time.Minute
+	}
+
 	client := openai.NewClient(
 		option.WithBaseURL(baseURL),
 		option.WithAPIKey(apiKey),
+		option.WithMaxRetries(cfg.MaxRetries),
 	)
 
 	return &OpenAI{
-		client: client,
-		model:  model,
+		client:              client,
+		model:               model,
+		maxTokens:           cfg.MaxTokens,
+		rateLimitCooldown:   cfg.RateLimitCooldown,
+		paymentCooldown:     cfg.PaymentCooldown,
+		serverErrorCooldown: cfg.ServerErrorCooldown,
+		now:                 time.Now,
 	}, nil
+}
+
+// Availability returns an error without making a provider request when the
+// circuit is open. It is intentionally exposed so consolidation can skip
+// downstream LLM stages instead of generating a storm of identical failures.
+func (o *OpenAI) Availability() error {
+	o.circuitMu.Lock()
+	defer o.circuitMu.Unlock()
+	now := o.now()
+	if o.circuitUntil.IsZero() || !now.Before(o.circuitUntil) {
+		o.circuitUntil = time.Time{}
+		o.circuitStatus = 0
+		return nil
+	}
+	return &UnavailableError{StatusCode: o.circuitStatus, RetryAt: o.circuitUntil}
+}
+
+func (o *OpenAI) openCircuit(status int, cooldown time.Duration) error {
+	o.circuitMu.Lock()
+	defer o.circuitMu.Unlock()
+	retryAt := o.now().Add(cooldown)
+	if retryAt.After(o.circuitUntil) {
+		o.circuitUntil = retryAt
+		o.circuitStatus = status
+	}
+	return &UnavailableError{StatusCode: o.circuitStatus, RetryAt: o.circuitUntil}
+}
+
+func (o *OpenAI) completion(ctx context.Context, msgs []openai.ChatCompletionMessageParamUnion) (*openai.ChatCompletion, error) {
+	if err := o.Availability(); err != nil {
+		return nil, err
+	}
+	resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model:     o.model,
+		Messages:  msgs,
+		MaxTokens: openai.Int(o.maxTokens),
+	})
+	if err == nil {
+		return resp, nil
+	}
+	var apiErr *openai.Error
+	if errors.As(err, &apiErr) {
+		switch apiErr.StatusCode {
+		case 429:
+			return nil, o.openCircuit(apiErr.StatusCode, o.rateLimitCooldown)
+		case 402:
+			return nil, o.openCircuit(apiErr.StatusCode, o.paymentCooldown)
+		default:
+			if apiErr.StatusCode >= 500 {
+				return nil, o.openCircuit(apiErr.StatusCode, o.serverErrorCooldown)
+			}
+		}
+	}
+	return nil, fmt.Errorf("chat.completions call failed: %w", err)
 }
 
 // --- JSON response types ---
@@ -153,12 +271,9 @@ GOOD example (specific and synthesized):
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
@@ -230,12 +345,9 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
@@ -347,12 +459,9 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
@@ -394,10 +503,10 @@ Rules:
 			}
 
 			validated = append(validated, &StructuredPattern{
-				Content:       jp.Pattern,
+				Content:        jp.Pattern,
 				CoherenceScore: coherence,
-				SourceFactIDs: validFacts,
-				SourceRelIDs:  validRels,
+				SourceFactIDs:  validFacts,
+				SourceRelIDs:   validRels,
 			})
 		}
 
@@ -449,12 +558,9 @@ Rules:
 	}
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
@@ -538,12 +644,9 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
@@ -655,12 +758,9 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
@@ -779,12 +879,9 @@ Rules for pattern extraction (higher-order):
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
@@ -921,12 +1018,9 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		resp, err := o.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-			Model:    o.model,
-			Messages: msgs,
-		})
+		resp, err := o.completion(ctx, msgs)
 		if err != nil {
-			return nil, fmt.Errorf("chat.completions call failed: %w", err)
+			return nil, err
 		}
 		if len(resp.Choices) == 0 {
 			return nil, errors.New("reasoner: no response from LLM")
