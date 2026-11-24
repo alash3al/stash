@@ -94,7 +94,7 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 		if lerr != nil {
 			return RecallResponse{}, lerr
 		}
-		return b.applyRecallTrust(ctx, lexical)
+		return b.applyRecallTrust(ctx, lexical, false)
 	}
 
 	pgVec := pgvector.NewVector(vec)
@@ -237,7 +237,7 @@ func (b *Brain) RecallWithOptions(ctx context.Context, namespaces []string, quer
 
 	sortRecallResults(results)
 
-	trust, err := b.applyRecallTrust(ctx, results)
+	trust, err := b.applyRecallTrust(ctx, results, true)
 	if err != nil {
 		return RecallResponse{}, err
 	}

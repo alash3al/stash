@@ -212,3 +212,15 @@ func TestOnlyKnownVectorColumnsAreQueryable(t *testing.T) {
 		}
 	}
 }
+
+func TestAboveFloorBoundaryAndDisable(t *testing.T) {
+	if !aboveFloor(0.05, 0.05) {
+		t.Fatal("score equal to the floor must survive (>=)")
+	}
+	if aboveFloor(0.049, 0.05) {
+		t.Fatal("score below the floor must be dropped")
+	}
+	if !aboveFloor(0.0001, 0) {
+		t.Fatal("floor 0 must disable filtering")
+	}
+}

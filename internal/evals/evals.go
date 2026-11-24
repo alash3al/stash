@@ -103,6 +103,12 @@ type CaseResult struct {
 	Returned      []int64 `json:"returned"`
 }
 
+// aboveFloor reports whether a hit survives the recall floor. minScore <= 0
+// disables it; the comparison is >= to match applyRecallMinScore in brain.
+func aboveFloor(score, minScore float64) bool {
+	return minScore <= 0 || score >= minScore
+}
+
 // score evaluates one ranked result list against a relevant set.
 //
 // Kept pure and free of SQL so the metric arithmetic is exactly testable. Rank
@@ -189,6 +195,14 @@ var AllowedColumns = map[string]bool{
 // Qwen and searching the bge-m3 column compares incomparable vectors and
 // produces meaningless numbers, so callers must pair them deliberately.
 func (r *Runner) Run(ctx context.Context, set *Set, emb embedder.Embedder, column string, k int) (Report, error) {
+	return r.RunWithFloor(ctx, set, emb, column, k, 0)
+}
+
+// RunWithFloor is Run with the recall relevance floor (STASH_RECALL_MIN_SCORE)
+// applied to each case's top-k, so recall@k can be measured with the floor on
+// and compared with minScore=0. The score is 1 - cosine distance, the same
+// value recall serves as Score. minScore <= 0 disables the floor.
+func (r *Runner) RunWithFloor(ctx context.Context, set *Set, emb embedder.Embedder, column string, k int, minScore float64) (Report, error) {
 	if !AllowedColumns[column] {
 		return Report{}, fmt.Errorf("evals: column %q is not allowed", column)
 	}
@@ -203,11 +217,11 @@ func (r *Runner) Run(ctx context.Context, set *Set, emb embedder.Embedder, colum
 			return Report{}, fmt.Errorf("evals: embed case %q: %w", c.ID, err)
 		}
 		q := fmt.Sprintf(`
-			SELECT id FROM facts
+			SELECT id, 1 - (%s <=> $1) AS score FROM facts
 			 WHERE %s IS NOT NULL AND deleted_at IS NULL
 			   AND namespace_id = (SELECT id FROM namespaces WHERE slug = $3)
 			 ORDER BY %s <=> $1
-			 LIMIT $2`, column, column)
+			 LIMIT $2`, column, column, column)
 		rows, err := r.pool.Query(ctx, q, pgvector.NewVector(vec), k, c.Namespace)
 		if err != nil {
 			return Report{}, fmt.Errorf("evals: query case %q: %w", c.ID, err)
@@ -215,11 +229,14 @@ func (r *Runner) Run(ctx context.Context, set *Set, emb embedder.Embedder, colum
 		var returned []int64
 		for rows.Next() {
 			var id int64
-			if err := rows.Scan(&id); err != nil {
+			var sc float64
+			if err := rows.Scan(&id, &sc); err != nil {
 				rows.Close()
 				return Report{}, fmt.Errorf("evals: scan case %q: %w", c.ID, err)
 			}
-			returned = append(returned, id)
+			if aboveFloor(sc, minScore) {
+				returned = append(returned, id)
+			}
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()

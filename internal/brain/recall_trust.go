@@ -163,7 +163,7 @@ func (b *Brain) loadFactRecallMeta(ctx context.Context, factIDs []int64) (map[in
 		return map[int64]factRecallMeta{}, nil
 	}
 	rows, err := b.pool.Query(ctx,
-		`SELECT id, entity, property, valid_from, created_at FROM facts WHERE id = ANY($1)`,
+		`SELECT id, COALESCE(entity, ''), COALESCE(property, ''), valid_from, created_at FROM facts WHERE id = ANY($1)`,
 		factIDs,
 	)
 	if err != nil {
@@ -201,6 +201,12 @@ func formatFactTime(meta factRecallMeta) string {
 	return meta.CreatedAt.UTC().Format(time.RFC3339)
 }
 
+// contradictionRow is one (old_fact_id, new_fact_id) row from contradictions.
+type contradictionRow struct {
+	OldID int64
+	NewID int64
+}
+
 func (b *Brain) findSupersessionPairs(ctx context.Context, factIDs []int64, meta map[int64]factRecallMeta) ([]supersessionPair, error) {
 	if len(factIDs) < 2 {
 		return nil, nil
@@ -214,19 +220,39 @@ func (b *Brain) findSupersessionPairs(ctx context.Context, factIDs []int64, meta
 		return nil, fmt.Errorf("load contradiction pairs: %w", err)
 	}
 	defer rows.Close()
+	var contradictions []contradictionRow
+	for rows.Next() {
+		var row contradictionRow
+		if err := rows.Scan(&row.OldID, &row.NewID); err != nil {
+			return nil, fmt.Errorf("scan contradiction pair: %w", err)
+		}
+		contradictions = append(contradictions, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return buildSupersessionPairs(factIDs, contradictions, meta), nil
+}
+
+// buildSupersessionPairs decides which kept facts are "about the same subject":
+// an explicit contradiction row, or the same non-empty entity+property. The
+// older/newer side is always decided by effective time (valid_from, falling
+// back to created_at), never by the contradiction row's column order. Pure so
+// the decision logic is testable without a database.
+func buildSupersessionPairs(factIDs []int64, contradictions []contradictionRow, meta map[int64]factRecallMeta) []supersessionPair {
 	seen := map[[2]int64]bool{}
 	var pairs []supersessionPair
 	addPair := func(a, b int64) {
-		ma, mb := meta[a], meta[b]
-		ta, tb := factEffectiveTime(ma), factEffectiveTime(mb)
+		ta, tb := factEffectiveTime(meta[a]), factEffectiveTime(meta[b])
 		var older, newer int64
-		if ta.After(tb) {
+		switch {
+		case ta.After(tb):
 			older, newer = b, a
-		} else if tb.After(ta) {
+		case tb.After(ta):
 			older, newer = a, b
-		} else if a < b {
+		case a < b:
 			older, newer = a, b
-		} else {
+		default:
 			older, newer = b, a
 		}
 		key := [2]int64{older, newer}
@@ -236,15 +262,8 @@ func (b *Brain) findSupersessionPairs(ctx context.Context, factIDs []int64, meta
 		seen[key] = true
 		pairs = append(pairs, supersessionPair{OlderID: older, NewerID: newer})
 	}
-	for rows.Next() {
-		var oldID, newID int64
-		if err := rows.Scan(&oldID, &newID); err != nil {
-			return nil, fmt.Errorf("scan contradiction pair: %w", err)
-		}
-		addPair(oldID, newID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	for _, c := range contradictions {
+		addPair(c.OldID, c.NewID)
 	}
 	// Same entity+property in the result set implies the same subject.
 	for i := 0; i < len(factIDs); i++ {
@@ -259,7 +278,7 @@ func (b *Brain) findSupersessionPairs(ctx context.Context, factIDs []int64, meta
 			}
 		}
 	}
-	return pairs, nil
+	return pairs
 }
 
 func applySupersessionRanking(results []RecallResult, pairs []supersessionPair, meta map[int64]factRecallMeta) {
@@ -292,15 +311,18 @@ func applySupersessionRanking(results []RecallResult, pairs []supersessionPair, 
 	}
 }
 
-func (b *Brain) applyRecallTrust(ctx context.Context, results []RecallResult) (RecallResponse, error) {
+// applyRecallTrust runs floor, dedupe and supersession. applyFloor is false for
+// the lexical fallback: ts_rank_cd scores are not on the cosine scale the
+// floor is calibrated for, so a provider outage must not silently empty recall.
+func (b *Brain) applyRecallTrust(ctx context.Context, results []RecallResult, applyFloor bool) (RecallResponse, error) {
 	resp := RecallResponse{Results: results}
 	if len(results) == 0 {
 		return resp, nil
 	}
 
-	var below bool
-	resp.Results, below = applyRecallMinScore(resp.Results, b.config.RecallMinScore)
-	resp.BelowThreshold = below
+	if applyFloor {
+		resp.Results, resp.BelowThreshold = applyRecallMinScore(resp.Results, b.config.RecallMinScore)
+	}
 	if len(resp.Results) == 0 {
 		return resp, nil
 	}

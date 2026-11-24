@@ -50,7 +50,7 @@ func evalRunCmd(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	rep, err := runner.Run(ctx, set, emb, column, int(cmd.Int("limit")))
+	rep, err := runner.RunWithFloor(ctx, set, emb, column, int(cmd.Int("limit")), cmd.Float("min-score"))
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,8 @@ func evalCommand() *cli.Command {
 				Name:   "run",
 				Usage:  "Score one column: recall@k and MRR",
 				Action: evalRunCmd,
-				Flags:  []cli.Flag{setFlag, colFlag, limitFlag, skipFlag, verboseFlag},
+				Flags: []cli.Flag{setFlag, colFlag, limitFlag, skipFlag, verboseFlag,
+					&cli.FloatFlag{Name: "min-score", Value: 0, Usage: "Apply the recall relevance floor (STASH_RECALL_MIN_SCORE); 0 = off. Run with 0 and with the floor to prove recall@k parity"}},
 			},
 			{
 				Name:   "compare",
