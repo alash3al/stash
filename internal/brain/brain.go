@@ -69,6 +69,11 @@ type Config struct {
 	ProviderReranker               ProviderReranker
 	ProviderRerankCandidateLimit   int
 
+	// EmbedderInfo and ReasonerInfo are credential-free descriptions of the
+	// configured providers, reported by Stats. Set by bootstrap.
+	EmbedderInfo ProviderInfo
+	ReasonerInfo ProviderInfo
+
 	// MaxRecordAttempts bounds how many times one record may fail a stage for a
 	// permanent reason before the watermark is allowed past it. Zero uses
 	// DefaultMaxRecordAttempts.

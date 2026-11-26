@@ -102,6 +102,8 @@ func New(ctx context.Context) (*Context, error) {
 		ProviderRerankCandidateLimit:   cfg.ProviderRerankCandidateLimit,
 		MaxRecordAttempts:              cfg.MaxRecordAttempts,
 		CycleReasonerCallCeiling:       cfg.CycleReasonerCallCeiling,
+		EmbedderInfo:                   brain.NewProviderInfo(cfg.OpenAIBaseURL, cfg.EmbeddingModel),
+		ReasonerInfo:                   brain.NewProviderInfo(reasonerBaseURL(cfg), cfg.ReasonerModel),
 	}
 	if cfg.ProviderRerankEnabled() {
 		reranker, err := brain.NewDeepInfraReranker(cfg.ProviderRerankBaseURL, cfg.ProviderRerankAPIKey, cfg.ProviderRerankModel)
@@ -225,11 +227,17 @@ func buildEmbedder(cfg *config.Config) (embedder.Embedder, error) {
 	)
 }
 
-func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
-	baseURL := cfg.ReasonerBaseURL
-	if baseURL == "" {
-		baseURL = cfg.OpenAIBaseURL
+// reasonerBaseURL is the endpoint the reasoner actually calls: its own base
+// URL, falling back to the shared OpenAI-compatible one.
+func reasonerBaseURL(cfg *config.Config) string {
+	if cfg.ReasonerBaseURL != "" {
+		return cfg.ReasonerBaseURL
 	}
+	return cfg.OpenAIBaseURL
+}
+
+func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
+	baseURL := reasonerBaseURL(cfg)
 	apiKey := cfg.ReasonerAPIKey
 	if apiKey == "" {
 		apiKey = cfg.OpenAIAPIKey

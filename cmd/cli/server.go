@@ -27,7 +27,7 @@ var (
 
 func init() {
 	prometheus.MustRegister(buildInfo)
-	buildInfo.WithLabelValues("0.2.8").Set(1)
+	buildInfo.WithLabelValues(version).Set(1)
 }
 
 func serveHTTP(ctx context.Context, cmd *cli.Command) error {

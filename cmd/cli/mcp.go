@@ -45,7 +45,7 @@ func render(name string) string {
 }
 
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
-	mcpServer := server.NewMCPServer("stash", "0.2.8",
+	mcpServer := server.NewMCPServer("stash", version,
 		server.WithToolCapabilities(true),
 		server.WithDescription(render("server_description")),
 	)
@@ -298,6 +298,19 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, err
 		}
 		b, _ := json.Marshal(namespaces)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("stats",
+		mcp.WithDescription(render("stats_description")),
+		mcp.WithReadOnlyHintAnnotation(true),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		stats, err := bc.Brain.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+		stats.Server = &brain.ServerInfo{Version: version, GitSHA: buildSHA()}
+		b, _ := json.Marshal(stats)
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 

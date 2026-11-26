@@ -23,12 +23,14 @@ COPY . .
 # These are automatically populated by Docker Buildx.
 ARG TARGETOS
 ARG TARGETARCH
+# Optional: stamped into the binary and reported by the MCP `stats` tool.
+ARG GIT_SHA=""
 
 # 4. Build the binary.
 # CGO_ENABLED=0 creates a fully static binary (no C library dependencies).
 # -ldflags="-s -w" strips debug info for a smaller binary.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X main.gitSHA=${GIT_SHA}" \
     -o /out/stash \
     ./cmd/cli/
 

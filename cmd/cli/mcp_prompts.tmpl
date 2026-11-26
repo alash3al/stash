@@ -147,6 +147,16 @@ WHAT TO DO WITH RESULTS:
 COST OF NOT CALLING: Duplicate namespaces. Knowledge scattered. Recall misses because memories are in the wrong place.
 {{end}}
 
+{{define "stats_description"}}
+Read-only health snapshot of the memory store. Takes no arguments and never writes.
+
+RETURNS: row counts (namespaces, episodes, facts live/expired/soft-deleted, relationships, causal links, contradictions open/resolved, contexts live/expired), the top 15 namespaces by fact count, the consolidation backlog (unconsolidated episodes and the age of the oldest), the embedder and reasoner (provider, base-URL host, model, whether the host is Cloudflare), and the server version and git SHA.
+
+CALL THIS WHEN: checking whether memory is healthy, whether consolidation is keeping up, or which providers are configured.
+
+NEVER RETURNS: memory content, row data, API keys or full URLs.
+{{end}}
+
 {{define "list_namespaces_namespaces"}}
 Optional comma-separated namespace paths to filter. Each path includes itself and all descendants.
 /projects → /projects and all sub-namespaces.
