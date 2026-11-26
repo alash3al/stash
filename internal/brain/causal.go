@@ -27,7 +27,7 @@ func (b *Brain) DetectCausalLinks(ctx context.Context, nsID int64, facts []model
 			continue
 		}
 
-		_, err := b.pool.Exec(ctx,
+		tag, err := b.pool.Exec(ctx,
 			`INSERT INTO causal_links (namespace_id, cause_fact_id, effect_fact_id, confidence, method)
 			 VALUES ($1, $2, $3, $4, 'extracted')
 			 ON CONFLICT (cause_fact_id, effect_fact_id) WHERE deleted_at IS NULL DO NOTHING`,
@@ -36,7 +36,7 @@ func (b *Brain) DetectCausalLinks(ctx context.Context, nsID int64, facts []model
 		if err != nil {
 			return count, []string{fmt.Sprintf("insert causal link: %v", err)}
 		}
-		count++
+		count += int(tag.RowsAffected())
 	}
 
 	return count, nil
